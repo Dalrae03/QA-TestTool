@@ -13,6 +13,8 @@ Test Management System 백엔드 뼈대 프로젝트입니다.
 - MySQL
 - H2
 - Maven
+- Electron
+- electron-builder
 
 ## 현재 구현 범위
 
@@ -103,6 +105,65 @@ CREATE DATABASE tms CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 mvn spring-boot:run
 ```
 
+## Electron 데스크톱 앱
+
+Electron 앱은 현재 Spring Boot 백엔드를 호출하는 데스크톱 셸로 구성되어 있습니다.
+
+구성 파일:
+- [package.json](/Users/gimjun-won/Desktop/TMS/package.json:1)
+- [electron/main.js](/Users/gimjun-won/Desktop/TMS/electron/main.js:1)
+- [electron/preload.js](/Users/gimjun-won/Desktop/TMS/electron/preload.js:1)
+- [desktop/index.html](/Users/gimjun-won/Desktop/TMS/desktop/index.html:1)
+- [desktop/styles.css](/Users/gimjun-won/Desktop/TMS/desktop/styles.css:1)
+- [desktop/renderer.js](/Users/gimjun-won/Desktop/TMS/desktop/renderer.js:1)
+
+현재 Electron 앱에서 가능한 것:
+- 백엔드 URL 지정
+- 테스트케이스 목록 조회
+- 테스트케이스 생성
+- 테스트케이스 수정
+- 테스트케이스 삭제
+
+주의:
+- Electron 앱은 현재 백엔드를 내장 실행하지 않습니다.
+- 먼저 Spring Boot 서버가 떠 있어야 합니다.
+- 기본 연결 주소는 `http://localhost:8080` 입니다.
+
+### Electron 개발 실행
+
+```bash
+npm install
+npm run desktop:dev
+```
+
+### Electron 패키징
+
+macOS:
+
+```bash
+npm run desktop:dist:mac
+```
+
+Windows:
+
+```bash
+npm run desktop:dist:win
+```
+
+압축 없이 실행 가능한 앱 디렉터리만 확인:
+
+```bash
+npm run desktop:pack
+```
+
+출력 경로:
+- `release/`
+
+플랫폼 주의사항:
+- macOS 배포 파일은 macOS에서 빌드하는 것이 가장 안전합니다.
+- Windows 설치 파일은 Windows 러너 또는 CI에서 빌드하는 것이 안정적입니다.
+- 코드 서명과 notarization은 아직 설정하지 않았습니다.
+
 ## 테스트 방법
 
 테스트는 H2 인메모리 DB를 사용합니다.  
@@ -126,6 +187,20 @@ mvn test
 - `Failures: 0`
 - `Errors: 0`
 - `BUILD SUCCESS`
+
+## GitHub Actions
+
+Electron 패키징용 GitHub Actions 워크플로를 추가했습니다.
+
+파일:
+- [.github/workflows/electron-build.yml](/Users/gimjun-won/Desktop/TMS/.github/workflows/electron-build.yml:1)
+
+동작:
+- 수동 실행 `workflow_dispatch`
+- `desktop-v*` 태그 푸시 시 실행
+- macOS 빌드
+- Windows 빌드
+- 결과물을 GitHub Actions artifact로 업로드
 
 ## API
 

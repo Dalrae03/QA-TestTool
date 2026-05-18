@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QA TestTool</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Desktop Workspace</p>
+        <h1>QA TestTool</h1>
+        <p class="hero-copy">
+          Electron 데스크톱 셸에서 테스트 케이스를 작성, 조회, 수정, 삭제할 수 있습니다.
+        </p>
+      </div>
+      <div class="hero-card">
+        <div class="runtime-meta">
+          <span id="platform-pill">platform</span>
+          <span id="version-pill">version</span>
+        </div>
+        <label class="field-label" for="apiBaseUrl">Backend URL</label>
+        <div class="endpoint-row">
+          <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080">
+          <button id="connectButton" class="secondary-button">연결 확인</button>
+        </div>
+        <p class="hint">기본 연결 주소는 Spring Boot 서버 `http://localhost:8080` 입니다.</p>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="panel list-panel">
+        <div class="panel-header">
+          <div>
+            <p class="panel-kicker">Test Cases</p>
+            <h2>목록</h2>
+          </div>
+          <div class="panel-actions">
+            <button id="refreshButton" class="ghost-button">새로고침</button>
+            <button id="newButton" class="primary-button">새 테스트케이스</button>
+          </div>
+        </div>
+        <div id="listState" class="state-banner">데이터를 불러오는 중입니다.</div>
+        <ul id="testCaseList" class="case-list"></ul>
+      </aside>
+
+      <section class="panel editor-panel">
+        <div class="panel-header">
+          <div>
+            <p class="panel-kicker">Editor</p>
+            <h2 id="editorTitle">테스트케이스 작성</h2>
+          </div>
+          <div class="panel-actions">
+            <button id="deleteButton" class="danger-button" disabled>삭제</button>
+            <button id="resetButton" class="ghost-button">초기화</button>
+          </div>
+        </div>
+
+        <form id="testCaseForm" class="editor-grid">
+          <input id="testCaseId" type="hidden">
+
+          <label class="form-field">
+            <span>Type</span>
+            <select id="type" required>
+              <option value="FUNCTIONAL">FUNCTIONAL</option>
+              <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
+            </select>
+          </label>
+
+          <label class="form-field full-span">
+            <span>Title</span>
+            <input id="title" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트">
+          </label>
+
+          <label class="form-field full-span">
+            <span>Description</span>
+            <textarea id="description" required placeholder="테스트 목적과 개요를 적습니다."></textarea>
+          </label>
+
+          <label class="form-field full-span">
+            <span>Precondition</span>
+            <textarea id="precondition" required placeholder="사전 조건을 적습니다."></textarea>
+          </label>
+
+          <label class="form-field full-span">
+            <span>Steps</span>
+            <textarea id="steps" required placeholder="실행 절차를 순서대로 적습니다."></textarea>
+          </label>
+
+          <label class="form-field full-span">
+            <span>Expected</span>
+            <textarea id="expected" required placeholder="기대 결과를 적습니다."></textarea>
+          </label>
+
+          <label class="form-field full-span">
+            <span>Notes</span>
+            <textarea id="notes" placeholder="추가 메모가 있으면 적습니다."></textarea>
+          </label>
+
+          <div class="form-footer full-span">
+            <p id="formMode">새 테스트케이스를 저장할 준비가 됐습니다.</p>
+            <button type="submit" class="primary-button">저장</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script src="./renderer.js"></script>
+</body>
+</html>

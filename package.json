@@ -1,0 +1,49 @@
+{
+  "name": "qa-testtool-desktop",
+  "version": "0.1.0",
+  "description": "Electron desktop shell for the TMS backend",
+  "main": "electron/main.js",
+  "author": "gimjun-won",
+  "license": "UNLICENSED",
+  "scripts": {
+    "desktop:dev": "electron .",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:dist": "electron-builder",
+    "desktop:dist:mac": "electron-builder --mac dmg zip",
+    "desktop:dist:win": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.tms.desktop",
+    "productName": "QA TestTool",
+    "directories": {
+      "output": "release",
+      "buildResources": "buildResources"
+    },
+    "files": [
+      "electron/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
