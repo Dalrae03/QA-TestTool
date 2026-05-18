@@ -8,9 +8,9 @@
   "scripts": {
     "desktop:dev": "electron .",
     "desktop:pack": "electron-builder --dir",
-    "desktop:dist": "electron-builder",
-    "desktop:dist:mac": "electron-builder --mac dmg zip",
-    "desktop:dist:win": "electron-builder --win nsis portable"
+    "desktop:dist": "electron-builder --publish never",
+    "desktop:dist:mac": "electron-builder --publish never --mac dmg zip",
+    "desktop:dist:win": "electron-builder --publish never --win nsis portable"
   },
   "devDependencies": {
     "electron": "^35.0.0",
