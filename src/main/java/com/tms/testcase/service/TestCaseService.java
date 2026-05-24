@@ -35,6 +35,7 @@ public class TestCaseService {
     public TestCaseResponse createTestCase(CreateTestCaseRequest request) {
         TestCase testCase = new TestCase(
                 request.type(),
+                request.priority(),
                 request.title(),
                 request.description(),
                 request.precondition(),
@@ -51,6 +52,7 @@ public class TestCaseService {
         TestCase testCase = findById(id);
         testCase.update(
                 request.type(),
+                request.priority(),
                 request.title(),
                 request.description(),
                 request.precondition(),

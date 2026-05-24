@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
+import com.tms.testcase.entity.TestCasePriority;
 import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.repository.TestCaseRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +46,7 @@ class TestCaseControllerIntegrationTest {
     void shouldSupportFullCrudFlow() throws Exception {
         CreateTestCaseRequest createRequest = new CreateTestCaseRequest(
                 TestCaseType.FUNCTIONAL,
+                TestCasePriority.HIGH,
                 "Login success test",
                 "Verify a user can log in with valid credentials.",
                 "A registered user exists.",
@@ -60,6 +62,7 @@ class TestCaseControllerIntegrationTest {
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/testcases/\\d+")))
                 .andExpect(jsonPath("$.id").isNumber())
                 .andExpect(jsonPath("$.type").value("FUNCTIONAL"))
+                .andExpect(jsonPath("$.priority").value("HIGH"))
                 .andExpect(jsonPath("$.title").value("Login success test"))
                 .andReturn();
 
@@ -77,6 +80,7 @@ class TestCaseControllerIntegrationTest {
 
         UpdateTestCaseRequest updateRequest = new UpdateTestCaseRequest(
                 TestCaseType.NON_FUNCTIONAL,
+                TestCasePriority.LOW,
                 "Login performance test",
                 "Verify login response time under load.",
                 "Performance environment is available.",
@@ -91,6 +95,7 @@ class TestCaseControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id))
                 .andExpect(jsonPath("$.type").value("NON_FUNCTIONAL"))
+                .andExpect(jsonPath("$.priority").value("LOW"))
                 .andExpect(jsonPath("$.title").value("Login performance test"))
                 .andExpect(jsonPath("$.notes").value("Updated note"));
 
@@ -100,5 +105,30 @@ class TestCaseControllerIntegrationTest {
         mockMvc.perform(get("/api/testcases/{id}", id))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("TestCase not found. id=" + id));
+    }
+
+    @Test
+    void shouldRejectCreateWhenRequiredFieldsAreBlank() throws Exception {
+        CreateTestCaseRequest invalidRequest = new CreateTestCaseRequest(
+                TestCaseType.FUNCTIONAL,
+                TestCasePriority.MEDIUM,
+                "   ",
+                "",
+                " ",
+                "",
+                " ",
+                null
+        );
+
+        mockMvc.perform(post("/api/testcases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.errors.title").exists())
+                .andExpect(jsonPath("$.errors.description").exists())
+                .andExpect(jsonPath("$.errors.precondition").exists())
+                .andExpect(jsonPath("$.errors.steps").exists())
+                .andExpect(jsonPath("$.errors.expected").exists());
     }
 }

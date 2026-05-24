@@ -32,12 +32,56 @@ function createMainWindow() {
   window.loadFile(path.join(__dirname, "..", "desktop", "index.html"));
 }
 
+async function proxyApiRequest(_event, options) {
+  try {
+    const method = options?.method ?? "GET";
+    const url = options?.url;
+    const headers = {
+      ...(options?.headers ?? {})
+    };
+
+    const fetchOptions = {
+      method,
+      headers
+    };
+
+    if (options?.body !== undefined && options?.body !== null) {
+      fetchOptions.body = options.body;
+    }
+
+    const response = await fetch(url, fetchOptions);
+    const contentType = response.headers.get("content-type") ?? "";
+    let data = null;
+
+    if (response.status !== 204) {
+      data = contentType.includes("application/json")
+        ? await response.json()
+        : await response.text();
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 503,
+      data: {
+        message: "백엔드 서버에 연결할 수 없습니다. Spring Boot 서버가 8080 포트에서 실행 중인지 확인하세요."
+      }
+    };
+  }
+}
+
 app.whenReady().then(() => {
   ipcMain.handle("desktop:get-config", () => ({
     platform: process.platform,
     version: app.getVersion(),
     defaultApiBaseUrl: "http://localhost:8080"
   }));
+  ipcMain.handle("desktop:request", proxyApiRequest);
 
   createMainWindow();
 
