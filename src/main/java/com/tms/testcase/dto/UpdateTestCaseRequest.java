@@ -1,10 +1,15 @@
 package com.tms.testcase.dto;
 
+import com.tms.testcase.entity.TestCaseBrowser;
+import com.tms.testcase.entity.TestCaseDevice;
+import com.tms.testcase.entity.TestCaseOs;
 import com.tms.testcase.entity.TestCasePriority;
+import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public record UpdateTestCaseRequest(
         @NotNull
@@ -12,6 +17,9 @@ public record UpdateTestCaseRequest(
 
         @NotNull
         TestCasePriority priority,
+
+        @NotNull
+        TestCaseStatus status,
 
         @NotBlank
         @Size(max = 200)
@@ -29,6 +37,14 @@ public record UpdateTestCaseRequest(
         @NotBlank
         String expected,
 
-        String notes
+        String notes,
+
+        TestCaseOs os,
+
+        TestCaseBrowser browser,
+
+        TestCaseDevice device,
+
+        List<Long> areaTagIds
 ) {
 }

@@ -3,6 +3,13 @@ package com.tms.testcase.controller;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.TestCaseResponse;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
+import com.tms.testcase.dto.UpdateTestCaseStatusRequest;
+import com.tms.testcase.entity.TestCaseBrowser;
+import com.tms.testcase.entity.TestCaseDevice;
+import com.tms.testcase.entity.TestCaseOs;
+import com.tms.testcase.entity.TestCasePriority;
+import com.tms.testcase.entity.TestCaseStatus;
+import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.service.TestCaseService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -10,11 +17,13 @@ import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,8 +37,19 @@ public class TestCaseController {
     }
 
     @GetMapping
-    public ResponseEntity<List<TestCaseResponse>> getAllTestCases() {
-        return ResponseEntity.ok(testCaseService.getAllTestCases());
+    public ResponseEntity<List<TestCaseResponse>> getAllTestCases(
+            @RequestParam(required = false) TestCaseType type,
+            @RequestParam(required = false) TestCasePriority priority,
+            @RequestParam(required = false) TestCaseStatus status,
+            @RequestParam(required = false) TestCaseOs os,
+            @RequestParam(required = false) TestCaseBrowser browser,
+            @RequestParam(required = false) TestCaseDevice device,
+            @RequestParam(required = false) Long areaTagId,
+            @RequestParam(required = false) String keyword
+    ) {
+        return ResponseEntity.ok(
+                testCaseService.getAllTestCases(type, priority, status, os, browser, device, areaTagId, keyword)
+        );
     }
 
     @GetMapping("/{id}")
@@ -49,6 +69,14 @@ public class TestCaseController {
             @Valid @RequestBody UpdateTestCaseRequest request
     ) {
         return ResponseEntity.ok(testCaseService.updateTestCase(id, request));
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<TestCaseResponse> updateTestCaseStatus(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateTestCaseStatusRequest request
+    ) {
+        return ResponseEntity.ok(testCaseService.updateTestCaseStatus(id, request));
     }
 
     @DeleteMapping("/{id}")

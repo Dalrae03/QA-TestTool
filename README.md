@@ -156,6 +156,10 @@ npm run desktop:dist:win
 npm run desktop:pack
 ```
 
+배포 관련 참고:
+- `desktop:dist` 계열 스크립트는 `--publish never`로 설정되어 있어 빌드만 수행합니다.
+- GitHub Actions는 `desktop-v*` 태그 푸시 시 macOS/Windows 산출물을 생성하고 artifact로 업로드합니다.
+
 출력 경로:
 - `release/`
 
@@ -163,6 +167,7 @@ npm run desktop:pack
 - macOS 배포 파일은 macOS에서 빌드하는 것이 가장 안전합니다.
 - Windows 설치 파일은 Windows 러너 또는 CI에서 빌드하는 것이 안정적입니다.
 - 코드 서명과 notarization은 아직 설정하지 않았습니다.
+- CI에서 별도 `GH_TOKEN` 없이도 패키징되도록 설정되어 있습니다.
 
 ## 테스트 방법
 
