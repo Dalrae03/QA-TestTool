@@ -22,6 +22,10 @@ public class TestCase {
     @Column(nullable = false, length = 30)
     private TestCaseType type;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private TestCasePriority priority;
+
     @Column(nullable = false, length = 200)
     private String title;
 
@@ -50,6 +54,7 @@ public class TestCase {
 
     public TestCase(
             TestCaseType type,
+            TestCasePriority priority,
             String title,
             String description,
             String precondition,
@@ -58,6 +63,7 @@ public class TestCase {
             String notes
     ) {
         this.type = type;
+        this.priority = priority;
         this.title = title;
         this.description = description;
         this.precondition = precondition;
@@ -68,6 +74,7 @@ public class TestCase {
 
     public void update(
             TestCaseType type,
+            TestCasePriority priority,
             String title,
             String description,
             String precondition,
@@ -76,6 +83,7 @@ public class TestCase {
             String notes
     ) {
         this.type = type;
+        this.priority = priority;
         this.title = title;
         this.description = description;
         this.precondition = precondition;
@@ -92,8 +100,16 @@ public class TestCase {
         return type;
     }
 
+    public TestCasePriority getPriority() {
+        return priority;
+    }
+
     public void setType(TestCaseType type) {
         this.type = type;
+    }
+
+    public void setPriority(TestCasePriority priority) {
+        this.priority = priority;
     }
 
     public String getTitle() {

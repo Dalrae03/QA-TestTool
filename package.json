@@ -6,6 +6,7 @@
   "author": "gimjun-won",
   "license": "UNLICENSED",
   "scripts": {
+    "start": "electron .",
     "desktop:dev": "electron .",
     "desktop:pack": "electron-builder --dir",
     "desktop:dist": "electron-builder --publish never",
