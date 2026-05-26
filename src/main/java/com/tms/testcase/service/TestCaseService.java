@@ -1,5 +1,6 @@
 package com.tms.testcase.service;
 
+import com.tms.global.exception.InvalidRequestException;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.TestCaseResponse;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
@@ -16,8 +17,13 @@ import com.tms.testcase.repository.AreaTagRepository;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testcase.repository.TestCaseSpecification;
 import jakarta.persistence.EntityNotFoundException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,7 +50,7 @@ public class TestCaseService {
             Long areaTagId,
             String keyword
     ) {
-        Specification<TestCase> spec = Specification.where(null);
+        Specification<TestCase> spec = (root, query, cb) -> cb.conjunction();
         if (type != null) spec = spec.and(TestCaseSpecification.hasType(type));
         if (priority != null) spec = spec.and(TestCaseSpecification.hasPriority(priority));
         if (status != null) spec = spec.and(TestCaseSpecification.hasStatus(status));
@@ -129,6 +135,21 @@ public class TestCaseService {
         if (areaTagIds == null || areaTagIds.isEmpty()) {
             return Collections.emptyList();
         }
-        return areaTagRepository.findAllByIdIn(areaTagIds);
+
+        List<Long> uniqueTagIds = new ArrayList<>(new LinkedHashSet<>(areaTagIds));
+        List<AreaTag> areaTags = areaTagRepository.findAllByIdIn(uniqueTagIds);
+        Map<Long, AreaTag> areaTagsById = areaTags.stream()
+                .collect(Collectors.toMap(AreaTag::getId, Function.identity()));
+
+        if (areaTagsById.size() != uniqueTagIds.size()) {
+            List<Long> missingTagIds = uniqueTagIds.stream()
+                    .filter(id -> !areaTagsById.containsKey(id))
+                    .toList();
+            throw new InvalidRequestException("존재하지 않는 태그 ID가 포함되어 있습니다: " + missingTagIds);
+        }
+
+        return uniqueTagIds.stream()
+                .map(areaTagsById::get)
+                .toList();
     }
 }

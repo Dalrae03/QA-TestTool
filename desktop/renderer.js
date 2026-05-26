@@ -210,7 +210,7 @@ async function createAndAddTag(name) {
     elements.newTagInput.value = "";
   } catch (e) {
     // 이미 존재하는 태그면 그냥 선택
-    const existing = state.areaTags.find(t => t.name === trimmed);
+    const existing = state.areaTags.find(t => t.name.toLowerCase() === trimmed.toLowerCase());
     if (existing) {
       addSelectedTag(existing.id);
       elements.newTagInput.value = "";
@@ -809,12 +809,17 @@ function buildTemplatePayload() {
   return {
     type: elements.type.value,
     priority: elements.priority.value,
+    status: elements.tcStatus.value || "DRAFT",
     title: elements.title.value.trim(),
     description: elements.description.value.trim(),
     precondition: elements.precondition.value.trim(),
     steps: getStepsValue(),
     expected: getExpectedValue(),
-    notes: elements.notes.value.trim() || null
+    notes: elements.notes.value.trim() || null,
+    os: elements.envOs.value || null,
+    browser: elements.envBrowser.value || null,
+    device: elements.envDevice.value || null,
+    areaTagIds: [...state.selectedTagIds]
   };
 }
 
@@ -863,16 +868,16 @@ function applyTemplate() {
   elements.testCaseId.value = "";
   elements.type.value = payload.type;
   elements.priority.value = payload.priority ?? "MEDIUM";
-  setStatusSelectorValue("DRAFT");
+  setStatusSelectorValue(payload.status ?? "DRAFT");
   elements.title.value = payload.title;
   elements.description.value = payload.description;
   elements.precondition.value = payload.precondition;
   renderSteps(parseStepPairs(payload.steps, payload.expected));
   elements.notes.value = payload.notes ?? "";
-  elements.envOs.value = "";
-  elements.envBrowser.value = "";
-  elements.envDevice.value = "";
-  state.selectedTagIds = [];
+  elements.envOs.value = payload.os ?? "";
+  elements.envBrowser.value = payload.browser ?? "";
+  elements.envDevice.value = payload.device ?? "";
+  state.selectedTagIds = [...(payload.areaTagIds ?? [])];
   renderSelectedTagChips();
   renderTagSelect();
   elements.testRunForm.reset();
@@ -958,12 +963,17 @@ function initTemplateBuilder() {
       payload: {
         type: document.getElementById("templateType").value,
         priority: document.getElementById("templatePriority").value,
+        status: "DRAFT",
         title: document.getElementById("templateTitle").value.trim(),
         description: document.getElementById("templateDescription").value.trim(),
         precondition: document.getElementById("templatePrecondition").value.trim(),
         steps: pairs.map(p => p.step).join("\n"),
         expected: pairs.map(p => p.expected).join("\n"),
-        notes: document.getElementById("templateNotes").value.trim() || null
+        notes: document.getElementById("templateNotes").value.trim() || null,
+        os: null,
+        browser: null,
+        device: null,
+        areaTagIds: []
       }
     };
 
