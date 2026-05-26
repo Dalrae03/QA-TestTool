@@ -42,6 +42,49 @@
             <button id="newButton" class="primary-button">새 테스트케이스</button>
           </div>
         </div>
+
+        <!-- 키워드 검색 -->
+        <div class="filter-search-row">
+          <input id="filterKeyword" type="text" class="filter-search-input" placeholder="제목·설명 키워드 검색">
+        </div>
+
+        <!-- Status 필터 탭 -->
+        <div class="filter-section">
+          <p class="filter-section-label">Status</p>
+          <div class="filter-pills" id="statusFilterPills">
+            <button class="filter-pill active" data-value="">ALL</button>
+            <button class="filter-pill draft" data-value="DRAFT">DRAFT</button>
+            <button class="filter-pill review" data-value="REVIEW_NEEDED">REVIEW</button>
+            <button class="filter-pill ready" data-value="READY">READY</button>
+            <button class="filter-pill completed" data-value="COMPLETED">COMPLETED</button>
+          </div>
+        </div>
+
+        <!-- OS 환경 인덱스 필터 -->
+        <div class="filter-section">
+          <p class="filter-section-label">OS 환경</p>
+          <div class="filter-pills" id="osFilterPills">
+            <button class="filter-pill active" data-value="">ALL</button>
+            <button class="filter-pill" data-value="MAC">Mac</button>
+            <button class="filter-pill" data-value="WINDOWS">Windows</button>
+            <button class="filter-pill" data-value="LINUX">Linux</button>
+            <button class="filter-pill" data-value="IOS">iOS</button>
+            <button class="filter-pill" data-value="ANDROID">Android</button>
+          </div>
+        </div>
+
+        <!-- Type + 영역 태그 필터 -->
+        <div class="filter-row">
+          <select id="filterType" class="filter-select">
+            <option value="">타입 전체</option>
+            <option value="FUNCTIONAL">FUNCTIONAL</option>
+            <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
+          </select>
+          <select id="filterAreaTag" class="filter-select">
+            <option value="">태그 전체</option>
+          </select>
+        </div>
+
         <div id="listState" class="state-banner">데이터를 불러오는 중입니다.</div>
         <ul id="testCaseList" class="case-list"></ul>
 
@@ -124,6 +167,43 @@
             </select>
           </label>
 
+          <!-- TC 상태 -->
+          <label class="form-field full-span">
+            <span>Status</span>
+            <div class="status-selector" id="statusSelector">
+              <button type="button" class="status-btn active" data-value="DRAFT">
+                <span class="status-dot draft"></span>DRAFT
+              </button>
+              <button type="button" class="status-btn" data-value="REVIEW_NEEDED">
+                <span class="status-dot review"></span>REVIEW NEEDED
+              </button>
+              <button type="button" class="status-btn" data-value="READY">
+                <span class="status-dot ready"></span>READY
+              </button>
+              <button type="button" class="status-btn" data-value="COMPLETED">
+                <span class="status-dot completed"></span>COMPLETED ✓
+              </button>
+            </div>
+            <input type="hidden" id="tcStatus" value="DRAFT">
+          </label>
+
+          <!-- 영역 태그 -->
+          <div class="form-field full-span">
+            <span class="form-field-label">영역 태그</span>
+            <div class="tag-input-area">
+              <div id="selectedTagChips" class="tag-chips"></div>
+              <div class="tag-add-row">
+                <select id="tagSelect" class="tag-select">
+                  <option value="">태그 선택…</option>
+                </select>
+                <button type="button" id="addTagButton" class="secondary-button tag-add-btn">추가</button>
+                <span class="tag-divider">|</span>
+                <input type="text" id="newTagInput" class="tag-new-input" placeholder="새 태그 이름">
+                <button type="button" id="createTagButton" class="secondary-button tag-add-btn">생성</button>
+              </div>
+            </div>
+          </div>
+
           <label class="form-field full-span">
             <span>Title <strong class="required-mark">*</strong></span>
             <input id="title" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트">
@@ -152,6 +232,45 @@
             <textarea id="notes" placeholder="추가 메모가 있으면 적습니다."></textarea>
           </label>
 
+          <!-- 테스트 환경 -->
+          <div class="form-field full-span env-section">
+            <span class="form-field-label">테스트 환경</span>
+            <div class="env-row">
+              <label class="form-field env-field">
+                <span>OS</span>
+                <select id="envOs">
+                  <option value="">선택 안 함</option>
+                  <option value="MAC">Mac</option>
+                  <option value="WINDOWS">Windows</option>
+                  <option value="LINUX">Linux</option>
+                  <option value="IOS">iOS</option>
+                  <option value="ANDROID">Android</option>
+                </select>
+              </label>
+              <label class="form-field env-field">
+                <span>브라우저</span>
+                <select id="envBrowser">
+                  <option value="">선택 안 함</option>
+                  <option value="CHROME">Chrome</option>
+                  <option value="FIREFOX">Firefox</option>
+                  <option value="SAFARI">Safari</option>
+                  <option value="EDGE">Edge</option>
+                  <option value="SAMSUNG_INTERNET">Samsung Internet</option>
+                  <option value="NONE">없음 (앱/API)</option>
+                </select>
+              </label>
+              <label class="form-field env-field">
+                <span>디바이스</span>
+                <select id="envDevice">
+                  <option value="">선택 안 함</option>
+                  <option value="DESKTOP">Desktop</option>
+                  <option value="MOBILE">Mobile</option>
+                  <option value="TABLET">Tablet</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
           <div class="form-footer full-span">
             <p id="formMode">새 테스트케이스를 저장할 준비가 됐습니다. <span class="required-hint">* 표시는 필수 입력입니다.</span></p>
             <div class="panel-actions">
@@ -175,9 +294,13 @@
             <label class="form-field">
               <span>Run Status <strong class="required-mark">*</strong></span>
               <select id="runStatus" required>
-                <option value="PASSED">PASSED</option>
-                <option value="FAILED">FAILED</option>
-                <option value="BLOCKED">BLOCKED</option>
+                <option value="PASSED">✅ PASSED — 통과</option>
+                <option value="FAILED">❌ FAILED — 실패</option>
+                <option value="BLOCKED">🚫 BLOCKED — 선행 조건 미충족</option>
+                <option value="SKIPPED">⏭ SKIPPED — 의도적 건너뜀</option>
+                <option value="IN_PROGRESS">🔄 IN_PROGRESS — 진행 중</option>
+                <option value="RETEST">🔁 RETEST — 재테스트 필요</option>
+                <option value="NOT_EXECUTED">⬜ NOT_EXECUTED — 미실행</option>
               </select>
             </label>
 
