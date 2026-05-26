@@ -11,11 +11,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.entity.TestCasePriority;
+import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testrun.dto.CreateTestRunRequest;
 import com.tms.testrun.entity.TestRunStatus;
 import com.tms.testrun.repository.TestRunRepository;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,12 +54,17 @@ class TestRunControllerIntegrationTest {
         TestCase testCase = testCaseRepository.save(new TestCase(
                 TestCaseType.FUNCTIONAL,
                 TestCasePriority.HIGH,
+                TestCaseStatus.DRAFT,
                 "Login test",
                 "Verify login",
                 "User exists",
                 "Open page\nSubmit form",
                 "Page opens\nLogin succeeds",
-                null
+                null,
+                null,
+                null,
+                null,
+                List.of()
         ));
 
         CreateTestRunRequest request = new CreateTestRunRequest(
@@ -99,12 +106,17 @@ class TestRunControllerIntegrationTest {
         TestCase testCase = testCaseRepository.save(new TestCase(
                 TestCaseType.FUNCTIONAL,
                 TestCasePriority.MEDIUM,
+                TestCaseStatus.DRAFT,
                 "Profile test",
                 "Verify profile save",
                 "User logged in",
                 "Open profile",
                 "Profile opens",
-                null
+                null,
+                null,
+                null,
+                null,
+                List.of()
         ));
 
         CreateTestRunRequest invalidRequest = new CreateTestRunRequest(

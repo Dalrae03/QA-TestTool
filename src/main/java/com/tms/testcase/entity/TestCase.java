@@ -139,14 +139,22 @@ public class TestCase {
         this.os = os;
         this.browser = browser;
         this.device = device;
+        replaceAreaTags(areaTags);
+    }
+
+    public void updateStatus(TestCaseStatus status) {
+        this.status = status;
+    }
+
+    public void replaceAreaTags(List<AreaTag> areaTags) {
         this.areaTags.clear();
         if (areaTags != null) {
             this.areaTags.addAll(areaTags);
         }
     }
 
-    public void updateStatus(TestCaseStatus status) {
-        this.status = status;
+    public void removeAreaTag(Long areaTagId) {
+        this.areaTags.removeIf(tag -> tag.getId().equals(areaTagId));
     }
 
     public Long getId() {
