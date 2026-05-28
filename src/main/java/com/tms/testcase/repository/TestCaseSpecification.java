@@ -53,8 +53,8 @@ public class TestCaseSpecification {
         return (root, query, cb) -> {
             String pattern = "%" + keyword.toLowerCase() + "%";
             return cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("description")), pattern)
+                    cb.like(cb.lower(root.get("title").as(String.class)), pattern),
+                    cb.like(cb.lower(root.get("description").as(String.class)), pattern)
             );
         };
     }
