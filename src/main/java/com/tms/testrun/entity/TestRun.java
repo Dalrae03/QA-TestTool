@@ -82,4 +82,16 @@ public class TestRun {
     public LocalDateTime getExecutedAt() {
         return executedAt;
     }
+
+    public void setStatus(TestRunStatus status) {
+        this.status = status;
+    }
+
+    public void setActualResult(String actualResult) {
+        this.actualResult = actualResult;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
 }

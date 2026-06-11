@@ -49,7 +49,24 @@ public class TestRunService {
     }
 
     @Transactional
+    public TestRunResponse updateTestRun(Long testCaseId, Long runId, CreateTestRunRequest request) {
+        TestRun testRun = findTestRunInTestCase(testCaseId, runId);
+
+        testRun.setStatus(request.status());
+        testRun.setActualResult(request.actualResult());
+        testRun.setNotes(request.notes());
+
+        return TestRunResponse.from(testRun);
+    }
+
+    @Transactional
     public void deleteTestRun(Long testCaseId, Long runId) {
+        TestRun testRun = findTestRunInTestCase(testCaseId, runId);
+
+        testRunRepository.delete(testRun);
+    }
+
+    private TestRun findTestRunInTestCase(Long testCaseId, Long runId) {
         ensureTestCaseExists(testCaseId);
 
         TestRun testRun = testRunRepository.findById(runId)
@@ -59,7 +76,7 @@ public class TestRunService {
             throw new EntityNotFoundException("TestRun not found. id=" + runId);
         }
 
-        testRunRepository.delete(testRun);
+        return testRun;
     }
 
     private void ensureTestCaseExists(Long testCaseId) {

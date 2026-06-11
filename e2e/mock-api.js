@@ -229,6 +229,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "PUT" && /^\/api\/testcases\/\d+\/runs\/\d+$/.test(url.pathname)) {
+    const [, , , testCaseIdPart, , runIdPart] = url.pathname.split("/");
+    const testCaseId = Number(testCaseIdPart);
+    const runId = Number(runIdPart);
+    const runs = testRunsByTestCaseId.get(testCaseId) || [];
+    const run = runs.find((item) => item.id === runId);
+    if (!run) {
+      json(res, 404, { message: `TestRun not found. id=${runId}` });
+      return;
+    }
+    const body = await readBody(req);
+    Object.assign(run, {
+      status: body.status,
+      actualResult: body.actualResult,
+      notes: body.notes ?? null
+    });
+    json(res, 200, run);
+    return;
+  }
+
   if (req.method === "DELETE" && /^\/api\/testcases\/\d+\/runs\/\d+$/.test(url.pathname)) {
     const [, , , testCaseIdPart, , runIdPart] = url.pathname.split("/");
     const testCaseId = Number(testCaseIdPart);
