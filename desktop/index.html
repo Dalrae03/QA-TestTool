@@ -2,403 +2,473 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=1440">
   <title>QA TestTool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="hero">
-      <div>
-        <p class="eyebrow">Desktop Workspace</p>
-        <h1>QA TestTool</h1>
-        <p class="hero-copy">
-          Electron 데스크톱 셸에서 테스트 케이스를 작성, 조회, 수정, 삭제할 수 있습니다.
-        </p>
+<div class="app-layout">
+
+<!-- ══ 왼쪽 nav-sidebar ══ -->
+<nav class="nav-sidebar">
+  <div class="nav-brand">
+    <div class="nav-brand-icon">Q</div>
+    <span class="nav-brand-name">QA Console</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab" id="navDash" onclick="switchView('dashboard')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      대시보드
+    </button>
+    <button class="nav-tab active" id="navTC" onclick="switchView('testcases')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      테스트 케이스
+    </button>
+    <button class="nav-tab" id="navSet" onclick="switchView('settings')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
+      연결 설정
+    </button>
+  </div>
+  <div class="nav-footer">
+    <span class="meta-pill" id="platform-pill">platform</span>
+    <span class="meta-pill" id="version-pill">version</span>
+  </div>
+</nav>
+
+<main class="app-main">
+
+<!-- ══ 1. 대시보드 ══ -->
+<div class="app-view" id="view-dashboard">
+  <div class="view-hd">
+    <div class="view-eyebrow">Overview</div>
+    <div class="view-h2">대시보드</div>
+    <p class="view-sub">전체 테스트케이스 현황을 한눈에 확인합니다.</p>
+  </div>
+  <div class="dash-body">
+    <div class="dash-grid">
+      <div class="stat-card"><div style="font-size:18px">📋</div><div class="stat-val" id="dashStatTotal">0</div><div class="stat-lbl">전체 테스트케이스</div></div>
+      <div class="stat-card"><div style="font-size:18px">✅</div><div class="stat-val" id="dashStatReady" style="color:var(--c-ready)">0</div><div class="stat-lbl">준비됨</div></div>
+      <div class="stat-card"><div style="font-size:18px">⚠️</div><div class="stat-val" id="dashStatIssues" style="color:var(--c-review)">0</div><div class="stat-lbl">잔존 이슈</div></div>
+      <div class="stat-card"><div style="font-size:18px">🏁</div><div class="stat-val" id="dashStatCompleted" style="color:var(--c-done)">0</div><div class="stat-lbl">완료</div></div>
+    </div>
+    <div class="dash-row2">
+      <div class="detail-card">
+        <div class="detail-card-ttl">우선순위 분포</div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-hi)">높음</span><div class="pbar-track"><div class="pbar-fill" id="dashPriHigh" style="width:0%;background:var(--c-hi)"></div></div><span class="pbar-cnt" id="dashPriHighCnt">0</span></div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-mid)">중간</span><div class="pbar-track"><div class="pbar-fill" id="dashPriMid" style="width:0%;background:var(--c-mid)"></div></div><span class="pbar-cnt" id="dashPriMidCnt">0</span></div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-lo)">낮음</span><div class="pbar-track"><div class="pbar-fill" id="dashPriLo" style="width:0%;background:var(--c-lo)"></div></div><span class="pbar-cnt" id="dashPriLoCnt">0</span></div>
       </div>
-      <div class="hero-card">
-        <div class="runtime-meta">
-          <span id="platform-pill">platform</span>
-          <span id="version-pill">version</span>
-        </div>
-        <label class="field-label" for="apiBaseUrl">Backend URL</label>
-        <div class="endpoint-row">
-          <input id="apiBaseUrl" type="url" placeholder="http://localhost:8080">
-          <button id="connectButton" class="secondary-button">연결 확인</button>
-        </div>
-        <p class="hint">기본 연결 주소는 Spring Boot 서버 `http://localhost:8080` 입니다.</p>
+      <div class="detail-card">
+        <div class="detail-card-ttl">영역 태그 분포</div>
+        <div class="tag-chip-list" id="dashTagChips"><span style="font-size:12px;color:var(--text-muted)">데이터 없음</span></div>
       </div>
-    </header>
+    </div>
+    <!-- 잔존 이슈 현황판 -->
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="detail-card-ttl" style="margin-bottom:0">잔존 이슈 현황판</div>
+        <span class="badge b-review" id="dashIssueCount">0건</span>
+      </div>
+      <div id="dashIssueList">
+        <p style="font-size:12px;color:var(--text-muted)">검토가 필요한 이슈가 없습니다.</p>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <main class="workspace">
-      <aside class="panel list-panel">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Test Cases</p>
-            <h2>목록</h2>
-          </div>
-          <div class="panel-actions">
-            <button id="refreshButton" class="ghost-button">새로고침</button>
-            <button id="newButton" class="primary-button">새 테스트케이스</button>
+<!-- ══ 2. 테스트케이스 뷰 ══ -->
+<div class="app-view active" id="view-testcases">
+  <div class="tc-workspace">
+
+    <!-- 왼쪽: 검색 + 폴더 트리 -->
+    <div class="tc-sidebar">
+      <!-- 사이드바 검색 -->
+      <div class="tc-sidebar-top">
+        <div class="search-box" style="margin-bottom:0">
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input placeholder="폴더 검색…">
+        </div>
+      </div>
+      <!-- 폴더 추가 -->
+      <div class="folder-add-wrap">
+        <button class="folder-add-btn">＋ 폴더 추가</button>
+      </div>
+      <!-- 폴더 트리 (UI 전용) -->
+      <div class="folder-tree" id="folderTree">
+        <div class="folder-node-wrap" data-id="all" data-depth="0">
+          <div class="drop-line" id="dl-top-all"></div>
+          <div class="folder-node" data-id="all" draggable="true"
+            onclick="selFolder(this,'전체')"
+            ondragstart="onDragStart(event,'all')" ondragover="onDragOver(event,'all')"
+            ondragleave="onDragLeave(event,'all')" ondrop="onDrop(event,'all')">
+            <span class="drag-handle">⋮⋮</span>
+            <span class="folder-caret-placeholder"></span>
+            <span style="font-size:14px">📂</span><span class="folder-label">전체</span>
+            <span class="folder-cnt" id="folderCntAll">0</span>
           </div>
         </div>
+      </div>
+    </div>
 
-        <!-- 키워드 검색 -->
-        <div class="filter-search-row">
-          <input id="filterKeyword" type="text" class="filter-search-input" placeholder="제목·설명 키워드 검색">
+    <!-- 오른쪽: 메인 -->
+    <div class="tc-main">
+
+      <!-- 항상 표시되는 상단 바 -->
+      <div class="tc-main-top">
+        <div class="tc-main-search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input placeholder="테스트 케이스 검색..." id="filterKeyword">
         </div>
+        <span id="mainSearchCount" style="font-size:11px;font-weight:600;color:var(--text-muted);background:var(--bg-app);border:1px solid var(--border);border-radius:var(--r-md);padding:4px 9px;white-space:nowrap;flex-shrink:0">0개</span>
+        <!-- 정렬 드롭다운 (UI 전용) -->
+        <div class="sort-wrap">
+          <button class="sort-btn" onclick="toggleSortMenu(event)" title="정렬 기준">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="sort-menu" id="sortMenu">
+            <div class="sort-item active" onclick="setSort(this,'최신 수정순')">최신 수정순</div>
+            <div class="sort-item" onclick="setSort(this,'제목 A→Z')">제목 A→Z</div>
+            <div class="sort-item" onclick="setSort(this,'우선순위 HIGH→LOW')">우선순위 HIGH→LOW</div>
+            <div class="sort-item" onclick="setSort(this,'상태 순')">상태 순</div>
+          </div>
+        </div>
+        <button class="btn btn-sm" id="filterToggleBtn" onclick="toggleFilterBar()">검색 필터</button>
+        <button class="btn btn-sm" id="refreshButton" title="새로고침">🔄</button>
+        <button class="btn btn-sm btn-pri" id="newButton">＋ 새 케이스</button>
+      </div>
 
-        <!-- Status 필터 탭 -->
-        <div class="filter-section">
-          <p class="filter-section-label">Status</p>
-          <div class="filter-pills" id="statusFilterPills">
+      <!-- 검색 필터 패널 (토글) -->
+      <div class="tc-filter-bar" id="tcFilterBar">
+        <div class="tc-filter-row">
+          <span class="tc-filter-section-lbl">STATUS</span>
+          <div class="filter-pills" id="statusFilterPills" style="margin-bottom:0">
             <button class="filter-pill active" data-value="">ALL</button>
-            <button class="filter-pill draft" data-value="DRAFT">DRAFT</button>
-            <button class="filter-pill review" data-value="REVIEW_NEEDED">REVIEW</button>
-            <button class="filter-pill ready" data-value="READY">READY</button>
-            <button class="filter-pill completed" data-value="COMPLETED">COMPLETED</button>
+            <button class="filter-pill" data-value="DRAFT">DRAFT</button>
+            <button class="filter-pill" data-value="REVIEW_NEEDED">REVIEW</button>
+            <button class="filter-pill" data-value="READY">READY</button>
+            <button class="filter-pill" data-value="COMPLETED">COMPLETED</button>
           </div>
         </div>
-
-        <!-- OS 환경 인덱스 필터 -->
-        <div class="filter-section">
-          <p class="filter-section-label">OS 환경</p>
-          <div class="filter-pills" id="osFilterPills">
+        <div class="tc-filter-row">
+          <span class="tc-filter-section-lbl">OS 환경</span>
+          <div class="filter-pills" id="osFilterPills" style="margin-bottom:0">
             <button class="filter-pill active" data-value="">ALL</button>
             <button class="filter-pill" data-value="MAC">Mac</button>
-            <button class="filter-pill" data-value="WINDOWS">Windows</button>
+            <button class="filter-pill" data-value="WINDOWS">Win</button>
             <button class="filter-pill" data-value="LINUX">Linux</button>
             <button class="filter-pill" data-value="IOS">iOS</button>
             <button class="filter-pill" data-value="ANDROID">Android</button>
           </div>
-        </div>
-
-        <!-- Type + 영역 태그 필터 -->
-        <div class="filter-row">
-          <select id="filterType" class="filter-select">
-            <option value="">타입 전체</option>
-            <option value="FUNCTIONAL">FUNCTIONAL</option>
-            <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
-          </select>
-          <select id="filterAreaTag" class="filter-select">
-            <option value="">태그 전체</option>
-          </select>
-        </div>
-
-        <div id="listState" class="state-banner">데이터를 불러오는 중입니다.</div>
-        <ul id="testCaseList" class="case-list"></ul>
-
-        <section class="sidebar-section template-sidebar">
-          <div class="template-panel-header">
-            <div>
-              <p class="panel-kicker">Templates</p>
-              <h3>템플릿 공간</h3>
-            </div>
-            <button id="openTemplateBuilderButton" type="button" class="secondary-button">템플릿 만들기</button>
-          </div>
-          <div class="template-toolbar">
-            <select id="templateSelect">
-              <option value="">템플릿을 선택하세요</option>
-            </select>
-            <button id="applyTemplateButton" type="button" class="secondary-button">불러오기</button>
-            <button id="deleteTemplateButton" type="button" class="ghost-button">삭제</button>
-          </div>
-          <p id="templateStatus" class="hint">반복되는 테스트케이스를 템플릿으로 저장해 빠르게 작성할 수 있습니다.</p>
-        </section>
-      </aside>
-
-      <section id="editorPanel" class="panel editor-panel" data-flow-stage="draft">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Editor</p>
-            <h2 id="editorTitle">테스트케이스 작성</h2>
-          </div>
-          <div class="panel-actions">
-            <button id="duplicateButton" class="secondary-button" disabled>복제</button>
-            <button id="deleteButton" class="danger-button" disabled>삭제</button>
-            <button id="resetButton" class="ghost-button">초기화</button>
-          </div>
-        </div>
-
-        <section class="flow-panel">
-          <div class="flow-steps">
-            <div class="flow-step" data-stage="draft">
-              <span class="flow-step-number">1</span>
-              <div>
-                <strong>초안 작성</strong>
-                <p>템플릿을 불러오거나 새 테스트케이스를 작성합니다.</p>
-              </div>
-            </div>
-            <div class="flow-step" data-stage="saved">
-              <span class="flow-step-number">2</span>
-              <div>
-                <strong>저장 완료</strong>
-                <p>저장 후 복제, 수정, 템플릿 저장이 가능합니다.</p>
-              </div>
-            </div>
-            <div class="flow-step" data-stage="run">
-              <span class="flow-step-number">3</span>
-              <div>
-                <strong>실행 기록</strong>
-                <p>선택한 테스트케이스에 대해 실행 결과를 남깁니다.</p>
-              </div>
-            </div>
-          </div>
-          <p id="flowHint" class="flow-hint">초안을 작성한 뒤 저장하면 바로 실행 결과를 기록할 수 있습니다.</p>
-        </section>
-
-        <form id="testCaseForm" class="editor-grid">
-          <input id="testCaseId" type="hidden">
-
-          <label class="form-field">
-            <span>Type <strong class="required-mark">*</strong></span>
-            <select id="type" required>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <select id="filterType" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">타입 전체</option>
               <option value="FUNCTIONAL">FUNCTIONAL</option>
               <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
             </select>
-          </label>
-
-          <label class="form-field">
-            <span>Priority <strong class="required-mark">*</strong></span>
-            <select id="priority" required>
-              <option value="HIGH">HIGH</option>
-              <option value="MEDIUM">MEDIUM</option>
-              <option value="LOW">LOW</option>
+            <select id="filterAreaTag" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">태그 전체</option>
             </select>
-          </label>
-
-          <!-- TC 상태 -->
-          <label class="form-field full-span">
-            <span>Status</span>
-            <div class="status-selector" id="statusSelector">
-              <button type="button" class="status-btn active" data-value="DRAFT">
-                <span class="status-dot draft"></span>DRAFT
-              </button>
-              <button type="button" class="status-btn" data-value="REVIEW_NEEDED">
-                <span class="status-dot review"></span>REVIEW NEEDED
-              </button>
-              <button type="button" class="status-btn" data-value="READY">
-                <span class="status-dot ready"></span>READY
-              </button>
-              <button type="button" class="status-btn" data-value="COMPLETED">
-                <span class="status-dot completed"></span>COMPLETED ✓
-              </button>
-            </div>
-            <input type="hidden" id="tcStatus" value="DRAFT">
-          </label>
-
-          <!-- 영역 태그 -->
-          <div class="form-field full-span">
-            <span class="form-field-label">영역 태그</span>
-            <div class="tag-input-area">
-              <div id="selectedTagChips" class="tag-chips"></div>
-              <div class="tag-add-row">
-                <select id="tagSelect" class="tag-select">
-                  <option value="">태그 선택…</option>
-                </select>
-                <button type="button" id="addTagButton" class="secondary-button tag-add-btn">추가</button>
-                <span class="tag-divider">|</span>
-                <input type="text" id="newTagInput" class="tag-new-input" placeholder="새 태그 이름">
-                <button type="button" id="createTagButton" class="secondary-button tag-add-btn">생성</button>
-              </div>
-            </div>
           </div>
-
-          <label class="form-field full-span">
-            <span>Title <strong class="required-mark">*</strong></span>
-            <input id="title" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트">
-          </label>
-
-          <label class="form-field full-span">
-            <span>Description <strong class="required-mark">*</strong></span>
-            <textarea id="description" required placeholder="테스트 목적과 개요를 적습니다."></textarea>
-          </label>
-
-          <label class="form-field full-span">
-            <span>Precondition <strong class="required-mark">*</strong></span>
-            <textarea id="precondition" required placeholder="사전 조건을 적습니다."></textarea>
-          </label>
-
-          <label class="form-field full-span">
-            <span>Steps / Expected <strong class="required-mark">*</strong></span>
-            <div id="stepsBuilder" class="steps-builder">
-              <div id="stepsList" class="steps-list"></div>
-              <button id="addStepButton" type="button" class="secondary-button step-add-button">단계 추가</button>
-            </div>
-          </label>
-
-          <label class="form-field full-span">
-            <span>Notes</span>
-            <textarea id="notes" placeholder="추가 메모가 있으면 적습니다."></textarea>
-          </label>
-
-          <!-- 테스트 환경 -->
-          <div class="form-field full-span env-section">
-            <span class="form-field-label">테스트 환경</span>
-            <div class="env-row">
-              <label class="form-field env-field">
-                <span>OS</span>
-                <select id="envOs">
-                  <option value="">선택 안 함</option>
-                  <option value="MAC">Mac</option>
-                  <option value="WINDOWS">Windows</option>
-                  <option value="LINUX">Linux</option>
-                  <option value="IOS">iOS</option>
-                  <option value="ANDROID">Android</option>
-                </select>
-              </label>
-              <label class="form-field env-field">
-                <span>브라우저</span>
-                <select id="envBrowser">
-                  <option value="">선택 안 함</option>
-                  <option value="CHROME">Chrome</option>
-                  <option value="FIREFOX">Firefox</option>
-                  <option value="SAFARI">Safari</option>
-                  <option value="EDGE">Edge</option>
-                  <option value="SAMSUNG_INTERNET">Samsung Internet</option>
-                  <option value="NONE">없음 (앱/API)</option>
-                </select>
-              </label>
-              <label class="form-field env-field">
-                <span>디바이스</span>
-                <select id="envDevice">
-                  <option value="">선택 안 함</option>
-                  <option value="DESKTOP">Desktop</option>
-                  <option value="MOBILE">Mobile</option>
-                  <option value="TABLET">Tablet</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div class="form-footer full-span">
-            <p id="formMode">새 테스트케이스를 저장할 준비가 됐습니다. <span class="required-hint">* 표시는 필수 입력입니다.</span></p>
-            <div class="panel-actions">
-              <button id="saveCurrentAsTemplateButton" type="button" class="secondary-button">템플릿 저장</button>
-              <button type="submit" class="primary-button">저장</button>
-            </div>
-          </div>
-        </form>
-
-        <section id="runPanel" class="run-panel run-panel-disabled">
-          <div class="template-panel-header">
-            <div>
-              <p class="panel-kicker">Test Run</p>
-              <h3>실행 기록</h3>
-            </div>
-          </div>
-
-          <div id="runState" class="state-banner">저장된 테스트케이스를 선택하면 실행 결과를 기록할 수 있습니다.</div>
-
-          <form id="testRunForm" class="editor-grid">
-            <label class="form-field">
-              <span>Run Status <strong class="required-mark">*</strong></span>
-              <select id="runStatus" required>
-                <option value="PASSED">✅ PASSED — 통과</option>
-                <option value="FAILED">❌ FAILED — 실패</option>
-                <option value="BLOCKED">🚫 BLOCKED — 선행 조건 미충족</option>
-                <option value="SKIPPED">⏭ SKIPPED — 의도적 건너뜀</option>
-                <option value="IN_PROGRESS">🔄 IN_PROGRESS — 진행 중</option>
-                <option value="RETEST">🔁 RETEST — 재테스트 필요</option>
-                <option value="NOT_EXECUTED">⬜ NOT_EXECUTED — 미실행</option>
-              </select>
-            </label>
-
-            <label class="form-field full-span">
-              <span>Actual Result <strong class="required-mark">*</strong></span>
-              <textarea id="actualResult" required placeholder="실행 결과를 기록합니다."></textarea>
-            </label>
-
-            <label class="form-field full-span">
-              <span>Run Notes</span>
-              <textarea id="runNotes" placeholder="브라우저, 버전, 추가 메모 등을 적습니다."></textarea>
-            </label>
-
-            <div class="form-footer full-span">
-              <p id="runMode">실행 결과를 저장하면 해당 테스트케이스의 이력에 추가됩니다.</p>
-              <button id="saveRunButton" type="submit" class="primary-button" disabled>실행 결과 저장</button>
-            </div>
-          </form>
-
-          <ul id="testRunList" class="run-list"></ul>
-        </section>
-      </section>
-    </main>
-  </div>
-
-  <div id="templateBuilderOverlay" class="template-builder-overlay hidden">
-    <section class="template-builder-page">
-      <div class="panel-header">
-        <div>
-          <p class="panel-kicker">Template Builder</p>
-          <h2>템플릿 만들기</h2>
-        </div>
-        <div class="panel-actions">
-          <button id="closeTemplateBuilderButton" type="button" class="ghost-button">닫기</button>
         </div>
       </div>
 
-      <p id="templateBuilderStatus" class="state-banner">반복되는 테스트케이스 구조를 템플릿으로 저장할 수 있습니다.</p>
-
-      <form id="templateBuilderForm" class="editor-grid">
-        <label class="form-field full-span">
-          <span>템플릿 이름 <strong class="required-mark">*</strong></span>
-          <input id="templateName" type="text" maxlength="120" required placeholder="예: 로그인 기본 템플릿">
-        </label>
-
-        <label class="form-field">
-          <span>Type <strong class="required-mark">*</strong></span>
-          <select id="templateType" required>
-            <option value="FUNCTIONAL">FUNCTIONAL</option>
-            <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
-          </select>
-        </label>
-
-        <label class="form-field">
-          <span>Priority <strong class="required-mark">*</strong></span>
-          <select id="templatePriority" required>
-            <option value="HIGH">HIGH</option>
-            <option value="MEDIUM">MEDIUM</option>
-            <option value="LOW">LOW</option>
-          </select>
-        </label>
-
-        <label class="form-field full-span">
-          <span>Title <strong class="required-mark">*</strong></span>
-          <input id="templateTitle" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트 템플릿">
-        </label>
-
-        <label class="form-field full-span">
-          <span>Description <strong class="required-mark">*</strong></span>
-          <textarea id="templateDescription" required placeholder="템플릿 목적과 개요를 적습니다."></textarea>
-        </label>
-
-        <label class="form-field full-span">
-          <span>Precondition <strong class="required-mark">*</strong></span>
-          <textarea id="templatePrecondition" required placeholder="기본 사전 조건을 적습니다."></textarea>
-        </label>
-
-        <label class="form-field full-span">
-          <span>Steps / Expected <strong class="required-mark">*</strong></span>
-          <div class="steps-builder">
-            <div id="templateStepsList" class="steps-list"></div>
-            <button id="addTemplateStepButton" type="button" class="secondary-button step-add-button">단계 추가</button>
-          </div>
-        </label>
-
-        <label class="form-field full-span">
-          <span>Notes</span>
-          <textarea id="templateNotes" placeholder="템플릿 공통 메모를 적습니다."></textarea>
-        </label>
-
-        <div class="form-footer full-span">
-          <p>템플릿을 저장한 뒤 사이드바에서 바로 불러올 수 있습니다.</p>
-          <button id="saveTemplateButton" type="submit" class="primary-button">템플릿 저장</button>
+      <!-- 탭 바 -->
+      <div class="tc-content">
+        <div class="tc-tab-bar">
+          <button class="tc-tab on" id="tctab-list" onclick="switchTcTab('list')">목록</button>
+          <button class="tc-tab" id="tctab-detail" onclick="switchTcTab('detail')">상세 보기</button>
+          <button class="tc-tab" id="tctab-runs" onclick="switchTcTab('runs')">실행 기록</button>
+          <span class="tc-tab-spacer"></span>
+          <span class="tc-breadcrumb" id="tcBreadcrumb">전체</span>
         </div>
-      </form>
-    </section>
-  </div>
 
-  <script src="./renderer.js"></script>
+        <!-- ① 목록 패널 -->
+        <div class="tc-panel show" id="tcp-list">
+          <div class="tc-list-scroll">
+            <div id="listState" class="list-state-msg" style="display:none"></div>
+            <table class="ctbl">
+              <colgroup><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:90px"></colgroup>
+              <thead>
+                <tr><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>최근 실행</th></tr>
+              </thead>
+              <tbody id="testCaseList"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ② 상세 보기 / 에디터 패널 -->
+        <div class="tc-panel" id="tcp-detail">
+
+          <!-- 에디터가 없을 때 빈 상태 -->
+          <div id="detailEmpty" class="empty-state">
+            <div class="empty-icon">📝</div>
+            <strong style="font-size:13px;color:var(--text-primary)">케이스를 선택하거나 새로 만드세요</strong>
+            <p>목록에서 테스트케이스를 클릭하거나<br>상단의 ＋ 새 케이스 버튼을 눌러주세요.</p>
+          </div>
+
+          <!-- 에디터 (새 케이스 또는 케이스 선택 시 표시) -->
+          <div id="detailEditor" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+            <!-- 에디터 헤더 -->
+            <div class="dt-header" id="editorPanel" data-flow-stage="draft">
+              <div class="dt-id" id="dtCaseId">새 테스트케이스</div>
+              <div class="dt-title" id="editorTitle">테스트케이스 작성</div>
+              <div class="dt-pills" id="dtPills"></div>
+              <!-- 흐름 단계 표시 -->
+              <div class="flow-panel" style="margin-top:10px">
+                <div class="flow-steps">
+                  <div class="flow-step" data-stage="draft">
+                    <span class="flow-step-number">1</span>
+                    <div><strong>초안 작성</strong><p>새 테스트케이스를 작성합니다.</p></div>
+                  </div>
+                  <div class="flow-step" data-stage="saved">
+                    <span class="flow-step-number">2</span>
+                    <div><strong>저장 완료</strong><p>저장 후 복제, 수정이 가능합니다.</p></div>
+                  </div>
+                  <div class="flow-step" data-stage="run">
+                    <span class="flow-step-number">3</span>
+                    <div><strong>실행 기록</strong><p>실행 결과를 기록합니다.</p></div>
+                  </div>
+                </div>
+                <p id="flowHint" class="flow-hint">초안을 작성한 뒤 저장하면 바로 실행 결과를 기록할 수 있습니다.</p>
+              </div>
+              <div class="dt-actions">
+                <button id="duplicateButton" class="btn btn-sm" disabled>복제</button>
+                <button id="deleteButton" class="btn btn-sm btn-danger" disabled>삭제</button>
+                <button id="resetButton" class="btn btn-sm">초기화</button>
+              </div>
+            </div>
+
+            <!-- 에디터 폼 바디 -->
+            <div class="dt-body">
+              <form id="testCaseForm">
+                <input id="testCaseId" type="hidden">
+
+                <div class="editor-row2" style="margin-bottom:14px">
+                  <label class="form-field">
+                    <span>Type <strong class="required-mark">*</strong></span>
+                    <select id="type" class="form-input" required>
+                      <option value="FUNCTIONAL">FUNCTIONAL</option>
+                      <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
+                    <span>Priority <strong class="required-mark">*</strong></span>
+                    <select id="priority" class="form-input" required>
+                      <option value="HIGH">HIGH</option>
+                      <option value="MEDIUM">MEDIUM</option>
+                      <option value="LOW">LOW</option>
+                    </select>
+                  </label>
+                </div>
+
+                <!-- 폴더 배정 -->
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">폴더</span>
+                  <select id="tcFolder" class="form-input">
+                    <option value="">미분류</option>
+                  </select>
+                </div>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">Status</span>
+                  <div class="status-selector" id="statusSelector">
+                    <button type="button" class="status-btn active" data-value="DRAFT"><span class="status-dot draft"></span>DRAFT</button>
+                    <button type="button" class="status-btn" data-value="REVIEW_NEEDED"><span class="status-dot review"></span>REVIEW</button>
+                    <button type="button" class="status-btn" data-value="READY"><span class="status-dot ready"></span>READY</button>
+                    <button type="button" class="status-btn" data-value="COMPLETED"><span class="status-dot completed"></span>DONE ✓</button>
+                  </div>
+                  <input type="hidden" id="tcStatus" value="DRAFT">
+                </div>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">영역 태그</span>
+                  <div class="tag-input-area">
+                    <div id="selectedTagChips" class="tag-chips"></div>
+                    <div class="tag-add-row">
+                      <select id="tagSelect" class="tag-select"><option value="">태그 선택…</option></select>
+                      <button type="button" id="addTagButton" class="btn btn-sm">추가</button>
+                      <span class="tag-divider">|</span>
+                      <input type="text" id="newTagInput" class="tag-new-input" placeholder="새 태그 이름">
+                      <button type="button" id="createTagButton" class="btn btn-sm">생성</button>
+                    </div>
+                  </div>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Title <strong class="required-mark">*</strong></span>
+                  <input id="title" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트" class="form-input">
+                </label>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Description <strong class="required-mark">*</strong></span>
+                  <textarea id="description" required placeholder="테스트 목적과 개요를 적습니다." class="form-input"></textarea>
+                </label>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Precondition <strong class="required-mark">*</strong></span>
+                  <textarea id="precondition" required placeholder="사전 조건을 적습니다." class="form-input"></textarea>
+                </label>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">Steps <strong class="required-mark">*</strong></span>
+                  <div id="stepsBuilder" class="steps-builder">
+                    <div id="stepsList" class="steps-list"></div>
+                    <button id="addStepButton" type="button" class="btn btn-sm step-add-btn">＋ 단계 추가</button>
+                  </div>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Notes</span>
+                  <textarea id="notes" placeholder="추가 메모가 있으면 적습니다." class="form-input"></textarea>
+                </label>
+
+                <div class="form-field env-section" style="margin-bottom:14px">
+                  <span class="form-field-label">테스트 환경</span>
+                  <div class="env-row">
+                    <label class="form-field env-field">
+                      <span>OS</span>
+                      <select id="envOs" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="MAC">Mac</option>
+                        <option value="WINDOWS">Windows</option>
+                        <option value="LINUX">Linux</option>
+                        <option value="IOS">iOS</option>
+                        <option value="ANDROID">Android</option>
+                      </select>
+                    </label>
+                    <label class="form-field env-field">
+                      <span>브라우저</span>
+                      <select id="envBrowser" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="CHROME">Chrome</option>
+                        <option value="FIREFOX">Firefox</option>
+                        <option value="SAFARI">Safari</option>
+                        <option value="EDGE">Edge</option>
+                        <option value="SAMSUNG_INTERNET">Samsung Internet</option>
+                        <option value="NONE">없음 (앱/API)</option>
+                      </select>
+                    </label>
+                    <label class="form-field env-field">
+                      <span>디바이스</span>
+                      <select id="envDevice" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="DESKTOP">Desktop</option>
+                        <option value="MOBILE">Mobile</option>
+                        <option value="TABLET">Tablet</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-footer">
+                  <p id="formMode" style="font-size:12px;color:var(--text-muted)">새 테스트케이스를 저장할 준비가 됐습니다. <span style="color:var(--accent);font-weight:600;font-size:11px">* 표시는 필수 입력입니다.</span></p>
+                  <button type="submit" class="btn btn-pri">저장</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 실행 기록 패널 -->
+        <div class="tc-panel" id="tcp-runs">
+          <div class="runs-body">
+            <!-- 폴더 단위 실행 기록 개요 -->
+            <section id="folderRunsPanel" class="run-panel-inner" style="display:none">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <p style="font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:2px" id="folderRunsId"></p>
+                  <div style="font-size:13px;font-weight:600" id="folderRunsTitle"></div>
+                </div>
+              </div>
+              <div id="folderRunsState" class="state-banner" style="display:none"></div>
+              <div id="folderRunsBody"></div>
+            </section>
+            <section id="runPanel" class="run-panel-inner run-panel-disabled">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <p style="font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:2px" id="runPanelCaseId"></p>
+                  <div style="font-size:13px;font-weight:600" id="runPanelCaseTitle">테스트케이스를 선택하세요</div>
+                </div>
+              </div>
+              <div id="runState" class="state-banner">저장된 테스트케이스를 선택하면 실행 결과를 기록할 수 있습니다.</div>
+              <form id="testRunForm">
+                <div class="run-stats" id="runStats" style="display:none">
+                  <div class="rs"><div class="rs-n" id="rsPass" style="color:var(--c-pass)">0</div><div class="rs-l">통과</div></div>
+                  <div class="rs"><div class="rs-n" id="rsFail" style="color:var(--c-hi)">0</div><div class="rs-l">실패</div></div>
+                  <div class="rs"><div class="rs-n" id="rsBlock" style="color:var(--text-muted)">0</div><div class="rs-l">차단</div></div>
+                  <div class="rs"><div class="rs-n" id="rsRetest" style="color:var(--text-muted)">0</div><div class="rs-l">재확인</div></div>
+                </div>
+                <div class="run-form-card">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:10px">새 실행 결과 입력</div>
+                  <div class="run-field">
+                    <label>실행 결과 *</label>
+                    <select id="runStatus" required class="form-input">
+                      <option value="PASSED">✅ PASSED — 통과</option>
+                      <option value="FAILED">❌ FAILED — 실패</option>
+                      <option value="BLOCKED">🚫 BLOCKED — 차단</option>
+                      <option value="SKIPPED">⏭ SKIPPED — 건너뜀</option>
+                      <option value="IN_PROGRESS">🔄 IN_PROGRESS</option>
+                      <option value="RETEST">🔁 RETEST — 재테스트</option>
+                      <option value="NOT_EXECUTED">⬜ NOT_EXECUTED</option>
+                    </select>
+                  </div>
+                  <div class="run-field">
+                    <label>실제 결과 *</label>
+                    <textarea id="actualResult" required class="form-input" rows="3" placeholder="실행 결과를 기록합니다."></textarea>
+                  </div>
+                  <div class="run-field">
+                    <label>실행 메모</label>
+                    <textarea id="runNotes" class="form-input" rows="2" placeholder="브라우저, 버전, 추가 메모…"></textarea>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+                    <p id="runMode" style="font-size:11px;color:var(--text-muted)">실행 결과를 저장하면 이력에 추가됩니다.</p>
+                    <button id="saveRunButton" type="submit" class="btn btn-pri btn-sm" disabled>저장</button>
+                  </div>
+                </div>
+              </form>
+              <ul id="testRunList" class="run-list"></ul>
+            </section>
+          </div>
+        </div>
+
+      </div><!-- /tc-content -->
+    </div><!-- /tc-main -->
+  </div><!-- /tc-workspace -->
+</div>
+
+<!-- ══ 3. 연결 설정 ══ -->
+<div class="app-view" id="view-settings">
+  <div class="view-hd">
+    <div class="view-eyebrow">Settings</div>
+    <div class="view-h2">연결 설정</div>
+    <p class="view-sub">백엔드 서버 연결 정보를 설정합니다.</p>
+  </div>
+  <div class="set-row">
+    <div class="set-card">
+      <h3>백엔드 연결</h3>
+      <p>Spring Boot 서버 주소를 입력하고 연결을 확인합니다.</p>
+      <div class="conn-row">
+        <input id="apiBaseUrl" type="url" class="form-input" placeholder="http://localhost:8080">
+        <button id="connectButton" class="btn btn-sm btn-pri">연결 확인</button>
+      </div>
+    </div>
+    <div class="set-card">
+      <h3>프로그램 정보</h3>
+      <p>현재 실행 중인 애플리케이션 정보입니다.</p>
+      <div class="info-row"><span style="color:var(--text-muted)">버전</span><span id="version-pill-info" style="color:var(--text-secondary)">-</span></div>
+      <div class="info-row"><span style="color:var(--text-muted)">플랫폼</span><span id="platform-pill-info" style="color:var(--text-secondary)">-</span></div>
+      <div class="info-row"><span style="color:var(--text-muted)">백엔드</span><span style="color:var(--text-secondary)">Spring Boot 3.5.0</span></div>
+      <div class="info-row"><span style="color:var(--text-muted)">DB</span><span style="color:var(--text-secondary)">MySQL</span></div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="./renderer.js"></script>
 </body>
 </html>
