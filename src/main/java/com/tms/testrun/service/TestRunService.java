@@ -1,5 +1,7 @@
 package com.tms.testrun.service;
 
+import com.tms.attachment.entity.AttachmentEntityType;
+import com.tms.attachment.service.AttachmentService;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testrun.dto.CreateTestRunRequest;
@@ -18,10 +20,13 @@ public class TestRunService {
 
     private final TestRunRepository testRunRepository;
     private final TestCaseRepository testCaseRepository;
+    private final AttachmentService attachmentService;
 
-    public TestRunService(TestRunRepository testRunRepository, TestCaseRepository testCaseRepository) {
+    public TestRunService(TestRunRepository testRunRepository, TestCaseRepository testCaseRepository,
+                          AttachmentService attachmentService) {
         this.testRunRepository = testRunRepository;
         this.testCaseRepository = testCaseRepository;
+        this.attachmentService = attachmentService;
     }
 
     public List<TestRunResponse> getTestRuns(Long testCaseId) {
@@ -42,6 +47,7 @@ public class TestRunService {
                 request.status(),
                 request.actualResult(),
                 request.notes(),
+                request.assignee(),
                 LocalDateTime.now()
         );
 
@@ -55,6 +61,7 @@ public class TestRunService {
         testRun.setStatus(request.status());
         testRun.setActualResult(request.actualResult());
         testRun.setNotes(request.notes());
+        testRun.setAssignee(request.assignee());
 
         return TestRunResponse.from(testRun);
     }
@@ -62,7 +69,7 @@ public class TestRunService {
     @Transactional
     public void deleteTestRun(Long testCaseId, Long runId) {
         TestRun testRun = findTestRunInTestCase(testCaseId, runId);
-
+        attachmentService.deleteAllByEntity(AttachmentEntityType.TEST_RUN, runId);
         testRunRepository.delete(testRun);
     }
 

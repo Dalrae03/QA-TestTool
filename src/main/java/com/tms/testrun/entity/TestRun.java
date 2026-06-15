@@ -39,6 +39,9 @@ public class TestRun {
     @Column
     private String notes;
 
+    @Column(length = 100)
+    private String assignee;
+
     @Column(nullable = false)
     private LocalDateTime executedAt;
 
@@ -52,10 +55,22 @@ public class TestRun {
             String notes,
             LocalDateTime executedAt
     ) {
+        this(testCase, status, actualResult, notes, null, executedAt);
+    }
+
+    public TestRun(
+            TestCase testCase,
+            TestRunStatus status,
+            String actualResult,
+            String notes,
+            String assignee,
+            LocalDateTime executedAt
+    ) {
         this.testCase = testCase;
         this.status = status;
         this.actualResult = actualResult;
         this.notes = notes;
+        this.assignee = assignee;
         this.executedAt = executedAt;
     }
 
@@ -94,4 +109,7 @@ public class TestRun {
     public void setNotes(String notes) {
         this.notes = notes;
     }
+
+    public String getAssignee() { return assignee; }
+    public void setAssignee(String assignee) { this.assignee = assignee; }
 }

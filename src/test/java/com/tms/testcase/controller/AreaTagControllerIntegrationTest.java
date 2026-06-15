@@ -66,7 +66,6 @@ class AreaTagControllerIntegrationTest {
                 "desc",
                 "precondition",
                 "step",
-                "expected",
                 null,
                 null,
                 null,

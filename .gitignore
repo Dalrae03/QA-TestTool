@@ -8,3 +8,5 @@ dist/
 release/
 .npm-cache/
 src/main/resources/application.yml
+# Local environment secrets (Jira credentials)
+.env
