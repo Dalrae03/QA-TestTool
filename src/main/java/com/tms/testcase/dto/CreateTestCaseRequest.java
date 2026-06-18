@@ -33,9 +33,6 @@ public record CreateTestCaseRequest(
         @NotBlank
         String steps,
 
-        @NotBlank
-        String expected,
-
         String notes,
 
         TestCaseOs os,
@@ -44,6 +41,44 @@ public record CreateTestCaseRequest(
 
         TestCaseDevice device,
 
-        List<Long> areaTagIds
+        List<Long> areaTagIds,
+
+        Long serverEnvironmentId,
+
+        Long testConfigurationId,
+
+        @Size(max = 100) String assignee,
+
+        @Size(max = 50) String version,
+
+        Long folderId
 ) {
+    public CreateTestCaseRequest(
+            TestCaseType type, TestCasePriority priority, TestCaseStatus status, String title,
+            String description, String precondition, String steps, String notes, TestCaseOs os,
+            TestCaseBrowser browser, TestCaseDevice device, List<Long> areaTagIds
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTagIds, null, null, null, null, null);
+    }
+
+    public CreateTestCaseRequest(
+            TestCaseType type, TestCasePriority priority, TestCaseStatus status, String title,
+            String description, String precondition, String steps, String notes, TestCaseOs os,
+            TestCaseBrowser browser, TestCaseDevice device, List<Long> areaTagIds,
+            Long serverEnvironmentId
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTagIds, serverEnvironmentId, null, null, null, null);
+    }
+
+    public CreateTestCaseRequest(
+            TestCaseType type, TestCasePriority priority, TestCaseStatus status, String title,
+            String description, String precondition, String steps, String notes, TestCaseOs os,
+            TestCaseBrowser browser, TestCaseDevice device, List<Long> areaTagIds,
+            Long serverEnvironmentId, Long testConfigurationId
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTagIds, serverEnvironmentId, testConfigurationId, null, null, null);
+    }
 }

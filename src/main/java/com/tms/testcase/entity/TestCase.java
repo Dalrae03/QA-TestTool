@@ -1,5 +1,8 @@
 package com.tms.testcase.entity;
 
+import com.tms.configuration.entity.TestConfiguration;
+import com.tms.defect.entity.Defect;
+import com.tms.environment.entity.ServerEnvironment;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,9 +15,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 @Entity
 @Table(name = "test_cases")
@@ -39,6 +46,9 @@ public class TestCase {
     @Column(nullable = false, length = 200)
     private String title;
 
+    @Column(length = 50)
+    private String version;
+
     @Lob
     @Column(nullable = false)
     private String description;
@@ -52,8 +62,8 @@ public class TestCase {
     private String steps;
 
     @Lob
-    @Column(nullable = false)
-    private String expected;
+    @Column(name = "expected", nullable = false)
+    private String legacyExpected;
 
     @Lob
     @Column
@@ -71,6 +81,21 @@ public class TestCase {
     @Column(length = 20)
     private TestCaseDevice device;
 
+    @Column(length = 100)
+    private String assignee;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "folder_id")
+    private TestFolder folder;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "server_environment_id")
+    private ServerEnvironment serverEnvironment;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "test_configuration_id")
+    private TestConfiguration testConfiguration;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "test_case_area_tags",
@@ -78,6 +103,22 @@ public class TestCase {
             inverseJoinColumns = @JoinColumn(name = "area_tag_id")
     )
     private List<AreaTag> areaTags = new ArrayList<>();
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "test_case_defects",
+            joinColumns = @JoinColumn(name = "test_case_id"),
+            inverseJoinColumns = @JoinColumn(name = "defect_id")
+    )
+    private List<Defect> defects = new ArrayList<>();
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column
+    private LocalDateTime updatedAt;
 
     protected TestCase() {
     }
@@ -90,12 +131,93 @@ public class TestCase {
             String description,
             String precondition,
             String steps,
-            String expected,
             String notes,
             TestCaseOs os,
             TestCaseBrowser browser,
             TestCaseDevice device,
             List<AreaTag> areaTags
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, null, null, null);
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, null, null);
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, null);
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee
+    ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, null);
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version
     ) {
         this.type = type;
         this.priority = priority;
@@ -104,12 +226,20 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.expected = expected;
+        this.legacyExpected = "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
         this.device = device;
+        this.serverEnvironment = serverEnvironment;
+        this.testConfiguration = testConfiguration;
+        this.assignee = assignee;
+        this.version = version;
         this.areaTags = (areaTags != null) ? new ArrayList<>(areaTags) : new ArrayList<>();
+    }
+
+    public void moveToFolder(TestFolder folder) {
+        this.folder = folder;
     }
 
     public void update(
@@ -120,12 +250,93 @@ public class TestCase {
             String description,
             String precondition,
             String steps,
-            String expected,
             String notes,
             TestCaseOs os,
             TestCaseBrowser browser,
             TestCaseDevice device,
             List<AreaTag> areaTags
+    ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, null, null, null);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment
+    ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, null, null);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration
+    ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, null);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee
+    ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, null);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version
     ) {
         this.type = type;
         this.priority = priority;
@@ -134,16 +345,22 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.expected = expected;
+        this.legacyExpected = "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
         this.device = device;
+        this.serverEnvironment = serverEnvironment;
+        this.testConfiguration = testConfiguration;
+        this.assignee = assignee;
+        this.version = version;
         replaceAreaTags(areaTags);
+        this.updatedAt = LocalDateTime.now();
     }
 
     public void updateStatus(TestCaseStatus status) {
         this.status = status;
+        this.updatedAt = LocalDateTime.now();
     }
 
     public void replaceAreaTags(List<AreaTag> areaTags) {
@@ -155,6 +372,24 @@ public class TestCase {
 
     public void removeAreaTag(Long areaTagId) {
         this.areaTags.removeIf(tag -> tag.getId().equals(areaTagId));
+    }
+
+    public void changeServerEnvironment(ServerEnvironment serverEnvironment) {
+        this.serverEnvironment = serverEnvironment;
+    }
+
+    public void changeTestConfiguration(TestConfiguration testConfiguration) {
+        this.testConfiguration = testConfiguration;
+    }
+
+    public void linkDefect(Defect defect) {
+        if (!defects.contains(defect)) {
+            defects.add(defect);
+        }
+    }
+
+    public void unlinkDefect(Defect defect) {
+        defects.remove(defect);
     }
 
     public Long getId() {
@@ -213,14 +448,6 @@ public class TestCase {
         this.steps = steps;
     }
 
-    public String getExpected() {
-        return expected;
-    }
-
-    public void setExpected(String expected) {
-        this.expected = expected;
-    }
-
     public String getNotes() {
         return notes;
     }
@@ -241,7 +468,25 @@ public class TestCase {
         return device;
     }
 
+    public String getAssignee() { return assignee; }
+    public String getVersion() { return version; }
+    public TestFolder getFolder() { return folder; }
+    public ServerEnvironment getServerEnvironment() { return serverEnvironment; }
+    public TestConfiguration getTestConfiguration() { return testConfiguration; }
+
     public List<AreaTag> getAreaTags() {
         return areaTags;
+    }
+
+    public List<Defect> getDefects() {
+        return defects;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
     }
 }
