@@ -3,12 +3,15 @@ const FOLDER_KEY              = "tms.folders";
 const FOLDER_ASSIGN_KEY       = "tms.folderAssignments";
 const SUITE_FOLDER_KEY        = "tms.suiteFolders";
 const SUITE_FOLDER_ASSIGN_KEY = "tms.suiteFolderAssignments";
+const FOLDER_COLLAPSED_KEY    = "tms.folderCollapsed";
+const FOLDER_MIGRATED_KEY     = "tms.foldersMigrated";
 
 // ── 상태 ─────────────────────────────────────────────────────────
 const state = {
   apiBaseUrl: "http://localhost:8080",
   selectedId: null,
-  testCases: [],
+  testCases: [],       // 현재 필터 적용된 목록 (필터 없으면 전체)
+  allTestCases: [],    // 필터 무관한 전체 목록 (대시보드·폴더 배정에서 사용)
   testRuns: [],
   testPlans: [],
   testSuites: [],
@@ -121,7 +124,7 @@ function switchView(v) {
   if (t) t.classList.add("active");
   if (v === "dashboard") renderDashboard();
   if (v === "plans") loadTestPlans();
-  if (v === "settings") loadTestConfigurations();
+  if (v === "settings") { loadTestConfigurations(); loadAreaTags(); }
 }
 
 function switchTcTab(t) {
@@ -207,20 +210,86 @@ function _toast(msg, isError = false) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 폴더 — localStorage 영속
+// 폴더 — DB API 영속 (collapsed 상태만 localStorage)
 // ══════════════════════════════════════════════════════════════════
 
-function loadFolders() {
-  try {
-    const raw  = localStorage.getItem(FOLDER_KEY);
-    const rawA = localStorage.getItem(FOLDER_ASSIGN_KEY);
-    state.folders           = raw  ? JSON.parse(raw)  : [];
-    state.folderAssignments = rawA ? JSON.parse(rawA) : {};
-  } catch (_e) { state.folders = []; state.folderAssignments = {}; }
+function _getFolderCollapsed() {
+  try { return JSON.parse(localStorage.getItem(FOLDER_COLLAPSED_KEY) || "{}"); } catch { return {}; }
 }
+function _saveFolderCollapsed() {
+  const map = {};
+  for (const f of state.folders) if (f.collapsed) map[String(f.id)] = true;
+  localStorage.setItem(FOLDER_COLLAPSED_KEY, JSON.stringify(map));
+}
+
+function _flattenFolderTree(nodes, collapsed) {
+  const result = [];
+  for (const n of nodes) {
+    result.push({ id: n.id, name: n.name, parentId: n.parentId ?? null, collapsed: !!collapsed[String(n.id)] });
+    if (n.children?.length) result.push(..._flattenFolderTree(n.children, collapsed));
+  }
+  return result;
+}
+
+async function loadFolders() {
+  try {
+    const tree = await request("/api/folders");
+    const collapsed = _getFolderCollapsed();
+    state.folders = _flattenFolderTree(tree, collapsed);
+  } catch (_e) { state.folders = []; }
+  _rebuildFolderAssignments();
+}
+
+function _rebuildFolderAssignments() {
+  state.folderAssignments = {};
+  for (const tc of state.allTestCases) {
+    if (tc.folderId) state.folderAssignments[String(tc.id)] = tc.folderId;
+  }
+}
+
 function persistFolders() {
-  localStorage.setItem(FOLDER_KEY,        JSON.stringify(state.folders));
-  localStorage.setItem(FOLDER_ASSIGN_KEY, JSON.stringify(state.folderAssignments));
+  _saveFolderCollapsed();
+}
+
+// 최초 1회: localStorage의 폴더/배정 데이터를 DB로 마이그레이션
+async function migrateLocalStorageFolders() {
+  if (localStorage.getItem(FOLDER_MIGRATED_KEY)) return;
+  const oldFolders = JSON.parse(localStorage.getItem(FOLDER_KEY) || "[]");
+  const oldAssign  = JSON.parse(localStorage.getItem(FOLDER_ASSIGN_KEY) || "{}");
+  if (oldFolders.length === 0) { localStorage.setItem(FOLDER_MIGRATED_KEY, "1"); return; }
+
+  const idMap = {};
+  // 루트 폴더 먼저
+  for (const f of oldFolders.filter(f => !f.parentId)) {
+    try {
+      const created = await request("/api/folders", { method: "POST", body: JSON.stringify({ name: f.name, parentId: null }) });
+      idMap[String(f.id)] = created.id;
+    } catch (_e) {}
+  }
+  // 하위 폴더 (최대 5 depth)
+  let remaining = oldFolders.filter(f => f.parentId);
+  for (let pass = 0; pass < 5 && remaining.length; pass++) {
+    const next = [];
+    for (const f of remaining) {
+      const newParentId = idMap[String(f.parentId)];
+      if (newParentId != null) {
+        try {
+          const created = await request("/api/folders", { method: "POST", body: JSON.stringify({ name: f.name, parentId: newParentId }) });
+          idMap[String(f.id)] = created.id;
+        } catch (_e) {}
+      } else { next.push(f); }
+    }
+    remaining = next;
+  }
+  // 폴더 배정 마이그레이션
+  for (const [tcId, oldFolderId] of Object.entries(oldAssign)) {
+    const newFolderId = idMap[String(oldFolderId)];
+    if (newFolderId != null) {
+      try { await request(`/api/testcases/${tcId}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: newFolderId }) }); } catch (_e) {}
+    }
+  }
+  localStorage.setItem(FOLDER_MIGRATED_KEY, "1");
+  _toast("폴더 구조를 서버에 마이그레이션했습니다.");
 }
 
 // ── 폴더 유틸 ─────────────────────────────────────────────────────
@@ -328,13 +397,15 @@ function _openFolderNameInput(parentId) {
   input.focus();
 
   let done = false;
-  const confirm = () => {
+  const confirm = async () => {
     if (done) return; done = true;
     const name = input.value.trim();
     wrap.remove();
     if (name) {
-      state.folders.push({ id: "f_" + Date.now() + "_" + Math.random().toString(36).slice(2,6), name, parentId: parentId || null, collapsed: false });
-      persistFolders();
+      try {
+        await request("/api/folders", { method: "POST", body: JSON.stringify({ name, parentId: parentId || null }) });
+        await loadFolders();
+      } catch (e) { _toast(`폴더 생성 실패: ${e.message}`, true); }
     }
     renderFolderTree(); renderFolderSelect(); renderList();
   };
@@ -357,24 +428,38 @@ function addSubFolder(parentId) {
 
 // ── 폴더 삭제 ─────────────────────────────────────────────────────
 
-function deleteFolder(folderId) {
+async function deleteFolder(folderId) {
   if (!window.confirm("폴더를 삭제할까요? (테스트케이스는 미분류로 이동됩니다)")) return;
   const toDelete = [folderId, ...getAllSubFolderIds(folderId)];
-  state.folders = state.folders.filter(f => !toDelete.includes(f.id));
+
+  // 폴더에 속한 TC들을 먼저 미분류로 이동
   for (const tcId of Object.keys(state.folderAssignments)) {
-    if (toDelete.includes(state.folderAssignments[tcId])) delete state.folderAssignments[tcId];
+    if (toDelete.includes(state.folderAssignments[tcId])) {
+      try { await request(`/api/testcases/${tcId}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }); } catch (_e) {}
+    }
   }
+  // 하위 폴더부터 순서대로 삭제 (leaf → root)
+  const ordered = toDelete.slice().reverse();
+  for (const id of ordered) {
+    try { await request(`/api/folders/${id}`, { method: "DELETE" }); } catch (_e) {}
+  }
+
   if (toDelete.includes(state.selectedFolderId)) selectFolder("all", "전체");
-  persistFolders(); renderFolderTree(); renderFolderSelect(); renderList();
+  await loadTestCases();
+  await loadFolders();
+  renderFolderTree(); renderFolderSelect(); renderList();
 }
 
-function renameFolder(folderId) {
+async function renameFolder(folderId) {
   const folder = state.folders.find(f => f.id === folderId);
   if (!folder) return;
   const newName = window.prompt("폴더 이름 변경", folder.name);
   if (!newName || !newName.trim() || newName.trim() === folder.name) return;
-  folder.name = newName.trim();
-  persistFolders(); renderFolderTree(); renderFolderSelect();
+  try {
+    await request(`/api/folders/${folderId}`, { method: "PUT", body: JSON.stringify({ name: newName.trim(), parentId: folder.parentId || null }) });
+    await loadFolders();
+    renderFolderTree(); renderFolderSelect();
+  } catch (e) { _toast(`이름 변경 실패: ${e.message}`, true); }
 }
 
 // ── 폴더 컨텍스트 메뉴 ────────────────────────────────────────────
@@ -430,34 +515,37 @@ function _clearFolderDrop() {
   document.querySelectorAll("#folderTree .folder-node.drop-on").forEach(n => n.classList.remove("drop-on"));
 }
 
-function moveFolderBefore(srcId, tgtId) {
+async function moveFolderBefore(srcId, tgtId) {
   if (srcId === tgtId || isDescendant(srcId, tgtId)) return;
   const src = state.folders.find(f => f.id === srcId);
   const tgt = state.folders.find(f => f.id === tgtId);
   if (!src || !tgt) return;
-  src.parentId = tgt.parentId;
-  state.folders = state.folders.filter(f => f.id !== srcId);
-  state.folders.splice(state.folders.findIndex(f => f.id === tgtId), 0, src);
-  persistFolders(); renderFolderTree(); renderFolderSelect(); renderList();
+  try {
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgt.parentId }) });
+    await loadFolders();
+  } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
+  renderFolderTree(); renderFolderSelect(); renderList();
 }
-function moveFolderAfter(srcId, tgtId) {
+async function moveFolderAfter(srcId, tgtId) {
   if (srcId === tgtId || isDescendant(srcId, tgtId)) return;
   const src = state.folders.find(f => f.id === srcId);
   const tgt = state.folders.find(f => f.id === tgtId);
   if (!src || !tgt) return;
-  src.parentId = tgt.parentId;
-  state.folders = state.folders.filter(f => f.id !== srcId);
-  state.folders.splice(state.folders.findIndex(f => f.id === tgtId) + 1, 0, src);
-  persistFolders(); renderFolderTree(); renderFolderSelect(); renderList();
+  try {
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgt.parentId }) });
+    await loadFolders();
+  } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
+  renderFolderTree(); renderFolderSelect(); renderList();
 }
-function moveFolderInto(srcId, tgtId) {
+async function moveFolderInto(srcId, tgtId) {
   if (srcId === tgtId || isDescendant(srcId, tgtId)) return;
   const src = state.folders.find(f => f.id === srcId);
-  const tgt = state.folders.find(f => f.id === tgtId);
-  if (!src || !tgt) return;
-  src.parentId = tgtId;
-  tgt.collapsed = false;
-  persistFolders(); renderFolderTree(); renderFolderSelect(); renderList();
+  if (!src) return;
+  try {
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgtId }) });
+    await loadFolders();
+  } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
+  renderFolderTree(); renderFolderSelect(); renderList();
 }
 
 // ── 폴더 트리 렌더 ───────────────────────────────────────────────
@@ -482,7 +570,7 @@ function renderFolderTree() {
     allNode.addEventListener("dragleave", () => allNode.classList.remove("drop-on"));
     allNode.addEventListener("drop", e => {
       e.preventDefault(); allNode.classList.remove("drop-on");
-      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); }
+      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }).catch(() => {}); }
     });
     container.appendChild(allWrap);
   }
@@ -507,7 +595,7 @@ function renderFolderTree() {
     unNode.addEventListener("dragleave", () => unNode.classList.remove("drop-on"));
     unNode.addEventListener("drop", e => {
       e.preventDefault(); unNode.classList.remove("drop-on");
-      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); }
+      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }).catch(() => {}); }
     });
     if (unHasTcs && !isSearching) {
       const unCaret = unWrap.querySelector(".folder-caret");
@@ -651,7 +739,7 @@ function _renderFolderNodes(container, parentId, depth, visibleFolderIds = null)
       else                  node.classList.add("drop-on");
     });
     node.addEventListener("dragleave", e => { if (!wrap.contains(e.relatedTarget)) _clearFolderDrop(); });
-    node.addEventListener("drop", e => {
+    node.addEventListener("drop", async e => {
       e.preventDefault(); _clearFolderDrop();
       // TC 드롭 → 이 폴더에 배정
       if (_dragTcId) {
@@ -662,12 +750,13 @@ function _renderFolderNodes(container, parentId, depth, visibleFolderIds = null)
         _dragTcId = null;
         renderFolderTree(); renderList();
         _toast(`'${folder.name}' 폴더로 이동됐습니다.`);
+        request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: folder.id }) }).catch(() => {});
         return;
       }
       // 폴더 이동
       if (!_dragFolderId || _dragFolderId === folder.id) { _dragFolderId = null; return; }
       const rect = node.getBoundingClientRect(); const zone = (e.clientY - rect.top) / rect.height;
-      if (zone < 0.25)      moveFolderBefore(_dragFolderId, folder.id);
+      if (zone < 0.25)      await moveFolderBefore(_dragFolderId, folder.id);
       else if (zone > 0.75) moveFolderAfter(_dragFolderId, folder.id);
       else                  moveFolderInto(_dragFolderId, folder.id);
       _dragFolderId = null;
@@ -750,7 +839,7 @@ function renderFolderSelect() {
 // ══════════════════════════════════════════════════════════════════
 
 function renderDashboard() {
-  const tcs = state.testCases; const total = tcs.length;
+  const tcs = state.allTestCases; const total = tcs.length;
   const g = id => document.getElementById(id);
   if (g("dashStatTotal"))     g("dashStatTotal").textContent     = total;
   if (g("dashStatReady"))     g("dashStatReady").textContent     = tcs.filter(t=>t.status==="READY").length;
@@ -776,10 +865,21 @@ function renderDashboard() {
 // ══════════════════════════════════════════════════════════════════
 
 function initStatusSelector() {
-  elements.statusSelector.addEventListener("click", e => {
+  elements.statusSelector.addEventListener("click", async e => {
     const btn = e.target.closest(".status-btn"); if (!btn) return;
     elements.statusSelector.querySelectorAll(".status-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active"); elements.tcStatus.value = btn.dataset.value;
+    const tcId = elements.testCaseId.value;
+    if (tcId) {
+      try {
+        await request(`/api/testcases/${tcId}/status`, { method: "PATCH", body: JSON.stringify({ status: btn.dataset.value }) });
+        const inFiltered = state.testCases.find(t => String(t.id) === String(tcId));
+        if (inFiltered) inFiltered.status = btn.dataset.value;
+        const inAll = state.allTestCases.find(t => String(t.id) === String(tcId));
+        if (inAll) inAll.status = btn.dataset.value;
+        renderList();
+      } catch (_e) {}
+    }
   });
 }
 function setStatusSelectorValue(value) {
@@ -815,8 +915,39 @@ function updateDetailHeader(tc) {
 // ══════════════════════════════════════════════════════════════════
 
 async function loadAreaTags() {
-  try { state.areaTags = await request("/api/area-tags",{method:"GET"}); renderTagSelect(); renderFilterAreaTagSelect(); }
+  try { state.areaTags = await request("/api/area-tags",{method:"GET"}); renderTagSelect(); renderFilterAreaTagSelect(); renderAreaTagManageList(); }
   catch (_e) { state.areaTags = []; }
+}
+
+function renderAreaTagManageList() {
+  const list = document.getElementById("areaTagManageList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.areaTags.length === 0) {
+    list.innerHTML = '<div class="plan-empty">등록된 영역 태그가 없습니다.</div>';
+    return;
+  }
+  state.areaTags.forEach(tag => {
+    const row = document.createElement("div");
+    row.className = "area-tag-row";
+    row.innerHTML = `<span class="area-tag-name">${escapeHtml(tag.name)}</span><button type="button" class="btn btn-sm btn-danger area-tag-delete-btn" data-id="${tag.id}">삭제</button>`;
+    list.appendChild(row);
+  });
+  list.querySelectorAll(".area-tag-delete-btn").forEach(btn => {
+    btn.addEventListener("click", () => deleteAreaTag(Number(btn.dataset.id)));
+  });
+}
+
+async function deleteAreaTag(id) {
+  const tag = state.areaTags.find(t => t.id === id);
+  if (!tag) return;
+  if (!window.confirm(`"${tag.name}" 태그를 삭제할까요?\n이 태그가 연결된 테스트 케이스에서도 제거됩니다.`)) return;
+  try {
+    await request(`/api/area-tags/${id}`, { method: "DELETE" });
+    _toast(`"${tag.name}" 태그를 삭제했습니다.`);
+    await loadAreaTags();
+    await loadTestCases();
+  } catch (e) { _toast(`태그 삭제 실패: ${e.message}`, true); }
 }
 function renderTagSelect() {
   elements.tagSelect.innerHTML = '<option value="">태그 선택…</option>';
@@ -975,6 +1106,7 @@ async function createServerEnvironment() {
     state.serverEnvironments.push(created);
     state.serverEnvironments.sort((a, b) => a.name.localeCompare(b.name, "ko"));
     renderServerEnvironmentSelect();
+    renderServerEnvManageList();
     elements.envServer.value = String(created.id);
     elements.newServerEnvName.value = "";
     elements.newServerEnvUrl.value = "";
@@ -1117,31 +1249,53 @@ async function deleteConfiguration() {
 // 필터
 // ══════════════════════════════════════════════════════════════════
 
+let _filterDebounceTimer = null;
+
+function _scheduleFilterFetch() {
+  clearTimeout(_filterDebounceTimer);
+  _filterDebounceTimer = setTimeout(fetchFilteredTestCases, 300);
+}
+
+async function fetchFilteredTestCases() {
+  const p = new URLSearchParams();
+  if (state.filters.status)    p.set("status",    state.filters.status);
+  if (state.filters.os)        p.set("os",        state.filters.os);
+  if (state.filters.type)      p.set("type",      state.filters.type);
+  if (state.filters.areaTagId) p.set("areaTagId", state.filters.areaTagId);
+  if (state.filters.keyword)   p.set("keyword",   state.filters.keyword);
+  const qs = p.toString();
+  if (!qs) {
+    // 필터 없음 → 전체 목록 복원
+    state.testCases = state.allTestCases;
+    renderFolderTree(); renderList();
+    return;
+  }
+  try {
+    // allTestCases는 건드리지 않음 — 대시보드는 항상 전체 기준
+    state.testCases = await request(`/api/testcases?${qs}`, { method: "GET" });
+    renderFolderTree(); renderList();
+  } catch (e) { updateStatus(`필터 조회 실패: ${e.message}`); }
+}
+
 function initFilters() {
   elements.statusFilterPills.addEventListener("click", e => {
     const pill = e.target.closest(".filter-pill"); if (!pill) return;
     elements.statusFilterPills.querySelectorAll(".filter-pill").forEach(p => p.classList.remove("active")); pill.classList.add("active");
-    state.filters.status = pill.dataset.value; renderList();
+    state.filters.status = pill.dataset.value; _scheduleFilterFetch();
   });
   elements.osFilterPills.addEventListener("click", e => {
     const pill = e.target.closest(".filter-pill"); if (!pill) return;
     elements.osFilterPills.querySelectorAll(".filter-pill").forEach(p => p.classList.remove("active")); pill.classList.add("active");
-    state.filters.os = pill.dataset.value; renderList();
+    state.filters.os = pill.dataset.value; _scheduleFilterFetch();
   });
-  elements.filterType.addEventListener("change",    () => { state.filters.type      = elements.filterType.value;    renderList(); });
-  elements.filterAreaTag.addEventListener("change", () => { state.filters.areaTagId = elements.filterAreaTag.value; renderList(); });
-  elements.filterKeyword.addEventListener("input",  () => { state.filters.keyword   = elements.filterKeyword.value.trim().toLowerCase(); renderList(); });
+  elements.filterType.addEventListener("change",    () => { state.filters.type      = elements.filterType.value;    _scheduleFilterFetch(); });
+  elements.filterAreaTag.addEventListener("change", () => { state.filters.areaTagId = elements.filterAreaTag.value; _scheduleFilterFetch(); });
+  elements.filterKeyword.addEventListener("input",  () => { state.filters.keyword   = elements.filterKeyword.value.trim(); _scheduleFilterFetch(); });
 }
 
+// 폴더 필터만 클라이언트에서 처리 (서버는 subfolder 재귀 미지원)
 function applyFilters(testCases) {
-  return testCases.filter(tc => {
-    if (state.filters.status    && tc.status !== state.filters.status) return false;
-    if (state.filters.os        && tc.os !== state.filters.os) return false;
-    if (state.filters.type      && tc.type !== state.filters.type) return false;
-    if (state.filters.areaTagId) { const tid = Number(state.filters.areaTagId); if (!tc.areaTags?.some(t => t.id === tid)) return false; }
-    if (state.filters.keyword)  { const kw = state.filters.keyword; if (!(tc.title||"").toLowerCase().includes(kw) && !(tc.description||"").toLowerCase().includes(kw)) return false; }
-    return true;
-  });
+  return testCases;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1585,7 +1739,7 @@ async function jiraSyncAll() {
 
 function duplicateCurrentTestCase() {
   const id = elements.testCaseId.value; if (!id) return;
-  const tc = state.testCases.find(item => String(item.id) === id);
+  const tc = state.allTestCases.find(item => String(item.id) === id);
   if (!tc) { _toast("복제할 테스트케이스를 찾을 수 없습니다.", true); return; }
   elements.testCaseId.value = ""; elements.type.value = tc.type||"FUNCTIONAL"; elements.priority.value = tc.priority||"MEDIUM";
   setStatusSelectorValue("DRAFT");
@@ -1641,7 +1795,6 @@ function saveFolderAssignment(tcId, isNew = false) {
   const key = String(tcId);
 
   let effectiveFolderId = formFolderId;
-  // 새 케이스이고 폼이 미분류인데 트리에서 특정 폴더가 선택된 경우 → 그 폴더에 배정
   if (isNew && !formFolderId &&
       state.selectedFolderId &&
       state.selectedFolderId !== "all" &&
@@ -1652,6 +1805,9 @@ function saveFolderAssignment(tcId, isNew = false) {
   if (effectiveFolderId) state.folderAssignments[key] = effectiveFolderId;
   else delete state.folderAssignments[key];
   persistFolders();
+
+  const folderId = effectiveFolderId ? Number(effectiveFolderId) : null;
+  request(`/api/testcases/${tcId}/folder`, { method: "PATCH", body: JSON.stringify({ folderId }) }).catch(() => {});
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2301,7 +2457,11 @@ async function loadTestPlans() {
   state.apiBaseUrl = getApiBaseUrl();
   try {
     state.testPlans = await request("/api/test-plans");
-    if (state.testCases.length === 0) state.testCases = await request("/api/testcases");
+    if (state.allTestCases.length === 0) {
+    const all = await request("/api/testcases");
+    state.allTestCases = all;
+    state.testCases    = all;
+  }
     if (state.selectedPlanId && !state.testPlans.some(plan => plan.id === state.selectedPlanId)) {
       state.selectedPlanId = null;
       state.selectedSuiteId = null;
@@ -2439,11 +2599,11 @@ function renderSuiteCasePicker(selectedIds) {
   const picker = document.getElementById("suiteCasePicker");
   const selected = new Set(selectedIds);
   picker.innerHTML = "";
-  if (state.testCases.length === 0) {
+  if (state.allTestCases.length === 0) {
     picker.innerHTML = '<div class="plan-empty">배정할 테스트케이스가 없습니다.</div>';
     return;
   }
-  state.testCases.forEach(testCase => {
+  state.allTestCases.forEach(testCase => {
     const label = document.createElement("label");
     label.className = "suite-case-option";
     label.innerHTML = `<input type="checkbox" value="${testCase.id}" ${selected.has(testCase.id) ? "checked" : ""}><span>${escapeHtml(testCase.title)}<small>TC-${String(testCase.id).padStart(3, "0")} · ${escapeHtml(testCase.status)}</small></span>`;
@@ -2540,11 +2700,19 @@ async function loadTestCases() {
   state.apiBaseUrl = getApiBaseUrl();
   updateStatus("불러오는 중...");
   try {
-    state.testCases = await request("/api/testcases", { method: "GET" });
-    renderFolderTree(); renderList();
+    const all = await request("/api/testcases", { method: "GET" });
+    state.allTestCases = all;
+    state.testCases    = all;
+    _rebuildFolderAssignments();
+    const hasFilter = state.filters.status || state.filters.os || state.filters.type || state.filters.areaTagId || state.filters.keyword;
+    if (hasFilter) {
+      await fetchFilteredTestCases();   // 필터 재적용
+    } else {
+      renderFolderTree(); renderList();
+    }
     _stopRetry();
   } catch (e) {
-    state.testCases = []; renderFolderTree(); renderList();
+    state.allTestCases = []; state.testCases = []; renderFolderTree(); renderList();
     updateStatus(`연결 실패: ${e.message}`);
     _startRetry();
   }
@@ -2556,11 +2724,14 @@ function _startRetry() {
   _retryTimer = setInterval(async () => {
     try {
       await request("/api/testcases", { method: "GET" }).then(async tcs => {
+        state.allTestCases = tcs;
         state.testCases = tcs;
+        _rebuildFolderAssignments();
         _stopRetry();
         await loadAreaTags();
         await loadServerEnvironments();
         await loadTestConfigurations();
+        await loadFolders();
         renderFolderTree(); renderList();
         updateStatus(`${tcs.length}개 로드됨`);
       });
@@ -2614,7 +2785,7 @@ async function handleSubmit(event) {
       _toast(`TC-${String(updated.id).padStart(3,"0")} 수정 완료`);
       setFlowStage("saved", "수정이 반영됐습니다.");
       await loadTestCases();
-      const refreshed = state.testCases.find(tc => String(tc.id) === id);
+      const refreshed = state.allTestCases.find(tc => String(tc.id) === id);
       if (refreshed) await populateForm(refreshed);
     } else {
       // ── 생성 ──
@@ -2623,7 +2794,7 @@ async function handleSubmit(event) {
       _toast(`TC-${String(created.id).padStart(3,"0")} 생성 완료`);
       setFlowStage("saved", "저장됐습니다. 실행 결과를 기록할 수 있습니다.");
       await loadTestCases();
-      const createdItem = state.testCases.find(tc => tc.id === created.id);
+      const createdItem = state.allTestCases.find(tc => tc.id === created.id);
       if (createdItem) { await populateForm(createdItem); elements.actualResult.focus(); }
     }
   } catch (e) {
@@ -2660,7 +2831,11 @@ async function deleteTestRun(runId) {
 
 async function handleDelete() {
   const id = elements.testCaseId.value; if (!id) return;
-  if (!window.confirm(`테스트케이스 #${id}를 삭제할까요?`)) return;
+  const hasRuns = state.testRuns.length > 0;
+  const msg = hasRuns
+    ? `실행 기록이 남아있습니다. 테스트케이스 TC-${String(id).padStart(3,"0")}를 삭제할까요?`
+    : `테스트케이스 TC-${String(id).padStart(3,"0")}를 삭제할까요?`;
+  if (!window.confirm(msg)) return;
   try {
     await request(`/api/testcases/${id}`, { method: "DELETE" });
     delete state.folderAssignments[id]; persistFolders();
@@ -2729,7 +2904,6 @@ async function bootstrap() {
   state.apiBaseUrl = localStorage.getItem("tms.apiBaseUrl") || config.defaultApiBaseUrl;
   if (elements.apiBaseUrl) elements.apiBaseUrl.value = state.apiBaseUrl;
 
-  loadFolders();
   initStatusSelector();
   initFilters();
 
@@ -2807,8 +2981,10 @@ async function bootstrap() {
   await loadAreaTags();
   await loadServerEnvironments();
   await loadTestConfigurations();
-  await loadTestCases();
-  renderFolderSelect();
+  await loadTestCases();          // TC 먼저 로드해야 folderAssignments 재구성 가능
+  await migrateLocalStorageFolders(); // localStorage → DB 최초 1회 마이그레이션
+  await loadFolders();            // DB에서 폴더 트리 로드
+  renderFolderTree(); renderFolderSelect(); renderList();
 }
 
 // ── 사이드바 리사이즈 ─────────────────────────────────────────────
