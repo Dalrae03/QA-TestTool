@@ -1,8 +1,10 @@
 package com.tms.testrun.dto;
 
 import com.tms.testrun.entity.TestRunStatus;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public record CreateTestRunRequest(
         @NotNull
@@ -11,6 +13,15 @@ public record CreateTestRunRequest(
         @NotBlank
         String actualResult,
 
-        String notes
+        String notes,
+
+        @Size(max = 100) String assignee
 ) {
+    @AssertTrue(message = "실행 결과는 PASSED, FAILED, BLOCKED 중 하나여야 합니다.")
+    public boolean isSupportedStatus() {
+        return status == null
+                || status == TestRunStatus.PASSED
+                || status == TestRunStatus.FAILED
+                || status == TestRunStatus.BLOCKED;
+    }
 }

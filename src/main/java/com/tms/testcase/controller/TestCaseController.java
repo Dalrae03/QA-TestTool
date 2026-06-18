@@ -1,6 +1,7 @@
 package com.tms.testcase.controller;
 
 import com.tms.testcase.dto.CreateTestCaseRequest;
+import com.tms.testcase.dto.MoveToFolderRequest;
 import com.tms.testcase.dto.TestCaseResponse;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseStatusRequest;
@@ -45,10 +46,11 @@ public class TestCaseController {
             @RequestParam(required = false) TestCaseBrowser browser,
             @RequestParam(required = false) TestCaseDevice device,
             @RequestParam(required = false) Long areaTagId,
-            @RequestParam(required = false) String keyword
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long folderId
     ) {
         return ResponseEntity.ok(
-                testCaseService.getAllTestCases(type, priority, status, os, browser, device, areaTagId, keyword)
+                testCaseService.getAllTestCases(type, priority, status, os, browser, device, areaTagId, keyword, folderId)
         );
     }
 
@@ -83,5 +85,29 @@ public class TestCaseController {
     public ResponseEntity<Void> deleteTestCase(@PathVariable Long id) {
         testCaseService.deleteTestCase(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/folder")
+    public ResponseEntity<TestCaseResponse> moveToFolder(
+            @PathVariable Long id,
+            @RequestBody MoveToFolderRequest request
+    ) {
+        return ResponseEntity.ok(testCaseService.moveToFolder(id, request.folderId()));
+    }
+
+    @PostMapping("/{id}/defects/{defectId}")
+    public ResponseEntity<TestCaseResponse> linkDefect(
+            @PathVariable Long id,
+            @PathVariable Long defectId
+    ) {
+        return ResponseEntity.ok(testCaseService.linkDefect(id, defectId));
+    }
+
+    @DeleteMapping("/{id}/defects/{defectId}")
+    public ResponseEntity<TestCaseResponse> unlinkDefect(
+            @PathVariable Long id,
+            @PathVariable Long defectId
+    ) {
+        return ResponseEntity.ok(testCaseService.unlinkDefect(id, defectId));
     }
 }

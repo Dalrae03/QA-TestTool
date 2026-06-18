@@ -65,7 +65,6 @@ class TestCaseControllerIntegrationTest {
                 "Verify a user can log in with valid credentials.",
                 "A registered user exists.",
                 "1. Open login page\n2. Enter valid credentials\n3. Submit",
-                "User is redirected to the dashboard.",
                 "Smoke test",
                 TestCaseOs.MAC,
                 TestCaseBrowser.CHROME,
@@ -82,6 +81,9 @@ class TestCaseControllerIntegrationTest {
                 .andExpect(jsonPath("$.type").value("FUNCTIONAL"))
                 .andExpect(jsonPath("$.priority").value("HIGH"))
                 .andExpect(jsonPath("$.title").value("Login success test"))
+                .andExpect(jsonPath("$.expected").doesNotExist())
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andReturn();
 
         Long id = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
@@ -106,7 +108,6 @@ class TestCaseControllerIntegrationTest {
                 "Verify login response time under load.",
                 "Performance environment is available.",
                 "1. Send concurrent login requests\n2. Measure response times",
-                "Average response time stays within the threshold.",
                 "Updated note",
                 TestCaseOs.WINDOWS,
                 TestCaseBrowser.EDGE,
@@ -124,7 +125,8 @@ class TestCaseControllerIntegrationTest {
                 .andExpect(jsonPath("$.status").value("REVIEW_NEEDED"))
                 .andExpect(jsonPath("$.browser").value("EDGE"))
                 .andExpect(jsonPath("$.title").value("Login performance test"))
-                .andExpect(jsonPath("$.notes").value("Updated note"));
+                .andExpect(jsonPath("$.notes").value("Updated note"))
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty());
 
         mockMvc.perform(patch("/api/testcases/{id}/status", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -150,7 +152,6 @@ class TestCaseControllerIntegrationTest {
                 "",
                 " ",
                 "",
-                " ",
                 null,
                 null,
                 null,
@@ -166,8 +167,7 @@ class TestCaseControllerIntegrationTest {
                 .andExpect(jsonPath("$.errors.title").exists())
                 .andExpect(jsonPath("$.errors.description").exists())
                 .andExpect(jsonPath("$.errors.precondition").exists())
-                .andExpect(jsonPath("$.errors.steps").exists())
-                .andExpect(jsonPath("$.errors.expected").exists());
+                .andExpect(jsonPath("$.errors.steps").exists());
     }
 
     @Test
@@ -183,7 +183,6 @@ class TestCaseControllerIntegrationTest {
                 "Mac login flow",
                 "User exists",
                 "Open page",
-                "Login succeeds",
                 null,
                 TestCaseOs.MAC,
                 TestCaseBrowser.SAFARI,
@@ -199,7 +198,6 @@ class TestCaseControllerIntegrationTest {
                 "Windows login perf",
                 "Perf env exists",
                 "Run load",
-                "Threshold met",
                 null,
                 TestCaseOs.WINDOWS,
                 TestCaseBrowser.EDGE,
@@ -228,7 +226,6 @@ class TestCaseControllerIntegrationTest {
                 "Verify invalid tag ids fail",
                 "None",
                 "Run",
-                "Done",
                 null,
                 null,
                 null,

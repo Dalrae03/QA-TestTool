@@ -18,7 +18,7 @@ Test Management System 백엔드 뼈대 프로젝트입니다.
 
 ## 현재 구현 범위
 
-현재 실제로 동작하는 도메인은 `testcase` 입니다.
+현재 `testcase`, `testrun`, `testplan`, `testsuite`, `environment`, `configuration` 도메인이 동작합니다.
 
 구현 완료:
 - `TestCaseType` enum
@@ -33,13 +33,16 @@ Test Management System 백엔드 뼈대 프로젝트입니다.
 - 전역 예외 처리
 - `EntityNotFoundException` 기반 404 처리
 - CRUD 통합 테스트
+- 테스트 플랜 CRUD 및 상태/기간 관리
+- 플랜별 테스트 스위트 CRUD
+- 스위트별 테스트케이스 배정 및 순서 관리
+- 서버 환경 CRUD 및 테스트케이스 연동
+- 재사용 가능한 테스트 configuration CRUD 및 테스트케이스 연동
 
 패키지 뼈대만 생성됨:
 - `auth`
 - `user`
 - `project`
-- `testsuite`
-- `testrun`
 - `testresult`
 - `dashboard`
 - `global`
@@ -75,7 +78,6 @@ com.tms
 - `description`: 필수
 - `precondition`: 필수
 - `steps`: 필수
-- `expected`: 필수
 - `notes`: 선택
 
 테이블명:
@@ -123,6 +125,10 @@ Electron 앱은 현재 Spring Boot 백엔드를 호출하는 데스크톱 셸로
 - 테스트케이스 생성
 - 테스트케이스 수정
 - 테스트케이스 삭제
+- 테스트 플랜 생성/수정/삭제
+- 테스트 스위트 생성/수정/삭제 및 테스트케이스 배정
+- 서버 환경 등록 및 테스트케이스 배정
+- 서버·OS·브라우저·디바이스 configuration 관리 및 자동 적용
 
 주의:
 - Electron 앱은 현재 백엔드를 내장 실행하지 않습니다.
@@ -186,9 +192,11 @@ mvn test
 현재 확인된 테스트:
 - 애플리케이션 컨텍스트 로딩 테스트
 - `TestCase` CRUD 전체 통합 테스트
+- `TestPlan`/`TestSuite` CRUD 및 관계 통합 테스트
+- Electron 테스트 플랜/스위트 사용자 흐름 테스트
 
 최근 확인 결과:
-- `Tests run: 2`
+- `Tests run: 17`
 - `Failures: 0`
 - `Errors: 0`
 - `BUILD SUCCESS`
@@ -218,6 +226,26 @@ Electron 패키징용 GitHub Actions 워크플로를 추가했습니다.
 - `POST /api/testcases`
 - `PUT /api/testcases/{id}`
 - `DELETE /api/testcases/{id}`
+- `GET /api/test-plans`
+- `GET /api/test-plans/{id}`
+- `POST /api/test-plans`
+- `PUT /api/test-plans/{id}`
+- `DELETE /api/test-plans/{id}`
+- `GET /api/test-plans/{planId}/suites`
+- `GET /api/test-plans/{planId}/suites/{suiteId}`
+- `POST /api/test-plans/{planId}/suites`
+- `PUT /api/test-plans/{planId}/suites/{suiteId}`
+- `DELETE /api/test-plans/{planId}/suites/{suiteId}`
+- `GET /api/server-environments`
+- `GET /api/server-environments/{id}`
+- `POST /api/server-environments`
+- `PUT /api/server-environments/{id}`
+- `DELETE /api/server-environments/{id}`
+- `GET /api/test-configurations`
+- `GET /api/test-configurations/{id}`
+- `POST /api/test-configurations`
+- `PUT /api/test-configurations/{id}`
+- `DELETE /api/test-configurations/{id}`
 
 컨트롤러:
 - [TestCaseController.java](/Users/gimjun-won/Desktop/TMS/src/main/java/com/tms/testcase/controller/TestCaseController.java:1)
@@ -233,7 +261,6 @@ Electron 패키징용 GitHub Actions 워크플로를 추가했습니다.
   "description": "정상 계정으로 로그인 가능해야 한다.",
   "precondition": "가입된 사용자가 존재한다.",
   "steps": "1. 로그인 페이지 접속\n2. 이메일/비밀번호 입력\n3. 로그인 버튼 클릭",
-  "expected": "대시보드로 이동한다.",
   "notes": "스모크 테스트"
 }
 ```
@@ -247,7 +274,6 @@ Electron 패키징용 GitHub Actions 워크플로를 추가했습니다.
   "description": "부하 상황에서 로그인 응답 시간을 확인한다.",
   "precondition": "성능 테스트 환경이 준비되어 있다.",
   "steps": "1. 동시 로그인 요청 전송\n2. 응답 시간 측정",
-  "expected": "평균 응답 시간이 기준 이내여야 한다.",
   "notes": "성능 기준 재확인 필요"
 }
 ```
@@ -266,7 +292,6 @@ Electron 패키징용 GitHub Actions 워크플로를 추가했습니다.
   "description": "정상 계정으로 로그인 가능해야 한다.",
   "precondition": "가입된 사용자가 존재한다.",
   "steps": "1. 로그인 페이지 접속\n2. 이메일/비밀번호 입력\n3. 로그인 버튼 클릭",
-  "expected": "대시보드로 이동한다.",
   "notes": "스모크 테스트"
 }
 ```

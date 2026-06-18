@@ -7,7 +7,9 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "electron .",
+    "dev:start": "node scripts/dev-start.mjs",
     "desktop:dev": "electron .",
+    "test:desktop": "node e2e/electron-smoke.js",
     "desktop:pack": "electron-builder --dir",
     "desktop:dist": "electron-builder --publish never",
     "desktop:dist:mac": "electron-builder --publish never --mac dmg zip",

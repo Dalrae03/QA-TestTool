@@ -10,6 +10,7 @@ public record TestRunResponse(
         TestRunStatus status,
         String actualResult,
         String notes,
+        String assignee,
         LocalDateTime executedAt
 ) {
     public static TestRunResponse from(TestRun testRun) {
@@ -19,6 +20,7 @@ public record TestRunResponse(
                 testRun.getStatus(),
                 testRun.getActualResult(),
                 testRun.getNotes(),
+                testRun.getAssignee(),
                 testRun.getExecutedAt()
         );
     }
