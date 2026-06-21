@@ -3,6 +3,43 @@ const fs = require("fs");
 const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
 
 const isMac = process.platform === "darwin";
+const REQUEST_TIMEOUT_MS = 15000;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+function parseHttpUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") {
+    throw new Error("요청 URL이 없습니다.");
+  }
+  const url = new URL(rawUrl);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("http 또는 https 주소만 사용할 수 있습니다.");
+  }
+  return url;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function errorResponse(status, message) {
+  return { ok: false, status, data: { message } };
+}
+
+async function readResponse(response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (response.status === 204) {
+    return null;
+  }
+  return contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
+}
 
 function createMainWindow() {
   const window = new BrowserWindow({
@@ -26,8 +63,17 @@ function createMainWindow() {
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (["http:", "https:", "mailto:"].includes(parsed.protocol)) {
+        shell.openExternal(url);
+      }
+    } catch (_error) {}
     return { action: "deny" };
+  });
+
+  window.webContents.on("will-navigate", event => {
+    event.preventDefault();
   });
 
   window.loadFile(path.join(__dirname, "..", "desktop", "index.html"));
@@ -36,7 +82,7 @@ function createMainWindow() {
 async function proxyApiRequest(_event, options) {
   try {
     const method = options?.method ?? "GET";
-    const url = options?.url;
+    const url = parseHttpUrl(options?.url);
     const headers = {
       ...(options?.headers ?? {})
     };
@@ -50,15 +96,8 @@ async function proxyApiRequest(_event, options) {
       fetchOptions.body = options.body;
     }
 
-    const response = await fetch(url, fetchOptions);
-    const contentType = response.headers.get("content-type") ?? "";
-    let data = null;
-
-    if (response.status !== 204) {
-      data = contentType.includes("application/json")
-        ? await response.json()
-        : await response.text();
-    }
+    const response = await fetchWithTimeout(url, fetchOptions);
+    const data = await readResponse(response);
 
     return {
       ok: response.ok,
@@ -66,23 +105,17 @@ async function proxyApiRequest(_event, options) {
       data
     };
   } catch (error) {
-    return {
-      ok: false,
-      status: 503,
-      data: {
-        message: "백엔드 서버에 연결할 수 없습니다. Spring Boot 서버가 8080 포트에서 실행 중인지 확인하세요."
-      }
-    };
+    const message = error.name === "AbortError"
+      ? "백엔드 서버 응답 시간이 초과되었습니다."
+      : `백엔드 서버에 연결할 수 없습니다. ${error.message}`;
+    return errorResponse(503, message);
   }
 }
 
 // 첨부파일: 멀티파트 업로드 — 네이티브 파일 선택 후 FormData 로 백엔드에 POST
 async function uploadAttachment(_event, options) {
   try {
-    const url = options?.url;
-    if (!url) {
-      return { ok: false, status: 400, data: { message: "업로드 URL이 없습니다." } };
-    }
+    const url = parseHttpUrl(options?.url);
 
     const result = await dialog.showOpenDialog({
       title: "첨부할 파일 선택",
@@ -93,33 +126,28 @@ async function uploadAttachment(_event, options) {
     }
 
     const filePath = result.filePaths[0];
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_ATTACHMENT_BYTES) {
+      return errorResponse(413, "첨부파일은 50MB 이하만 업로드할 수 있습니다.");
+    }
     const buffer = fs.readFileSync(filePath);
     const fileName = path.basename(filePath);
 
     const formData = new FormData();
     formData.append("file", new Blob([buffer]), fileName);
 
-    const response = await fetch(url, { method: "POST", body: formData });
-    const contentType = response.headers.get("content-type") ?? "";
-    let data = null;
-    if (response.status !== 204) {
-      data = contentType.includes("application/json")
-        ? await response.json()
-        : await response.text();
-    }
+    const response = await fetchWithTimeout(url, { method: "POST", body: formData });
+    const data = await readResponse(response);
     return { ok: response.ok, status: response.status, data };
   } catch (error) {
-    return { ok: false, status: 503, data: { message: "파일 업로드에 실패했습니다." } };
+    return errorResponse(503, `파일 업로드에 실패했습니다. ${error.message}`);
   }
 }
 
 // 첨부파일: 다운로드 — 백엔드에서 받아 사용자가 선택한 위치에 저장
 async function downloadAttachment(_event, options) {
   try {
-    const url = options?.url;
-    if (!url) {
-      return { ok: false, status: 400, data: { message: "다운로드 URL이 없습니다." } };
-    }
+    const url = parseHttpUrl(options?.url);
 
     const saveResult = await dialog.showSaveDialog({
       title: "첨부파일 저장",
@@ -129,15 +157,16 @@ async function downloadAttachment(_event, options) {
       return { ok: false, canceled: true, status: 0, data: null };
     }
 
-    const response = await fetch(url, { method: "GET" });
+    const response = await fetchWithTimeout(url, { method: "GET" });
     if (!response.ok) {
-      return { ok: false, status: response.status, data: { message: `HTTP ${response.status}` } };
+      const data = await readResponse(response);
+      return { ok: false, status: response.status, data: typeof data === "object" ? data : { message: `HTTP ${response.status}` } };
     }
     const arrayBuffer = await response.arrayBuffer();
     fs.writeFileSync(saveResult.filePath, Buffer.from(arrayBuffer));
     return { ok: true, status: response.status, savedPath: saveResult.filePath, data: null };
   } catch (error) {
-    return { ok: false, status: 503, data: { message: "파일 다운로드에 실패했습니다." } };
+    return errorResponse(503, `파일 다운로드에 실패했습니다. ${error.message}`);
   }
 }
 

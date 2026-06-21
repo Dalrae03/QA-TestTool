@@ -302,6 +302,18 @@
                 </div>
 
                 <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">담당자</span>
+                  <select id="assignee" class="form-input">
+                    <option value="">담당자 없음</option>
+                  </select>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>버전 라벨</span>
+                  <input id="tcVersion" type="text" maxlength="50" placeholder="예: v1.0, release-2026.06" class="form-input">
+                </label>
+
+                <div class="form-field" style="margin-bottom:14px">
                   <span class="form-field-label">Status</span>
                   <div class="status-selector" id="statusSelector">
                     <button type="button" class="status-btn active" data-value="DRAFT"><span class="status-dot draft"></span>DRAFT</button>
@@ -477,6 +489,24 @@
                     <button type="button" id="tcAttachUploadBtn" class="btn btn-sm">＋ 파일 업로드</button>
                   </div>
                   <div id="tcAttachList" class="attach-list"></div>
+                </div>
+
+                <!-- 버전 관리 섹션 -->
+                <div class="version-section" id="versionSection" style="display:none">
+                  <div class="version-section-hd">
+                    <span>버전 관리</span>
+                    <button type="button" id="versionRefreshBtn" class="btn btn-sm">새로고침</button>
+                  </div>
+                  <div id="versionList" class="version-list"></div>
+                </div>
+
+                <!-- 변경이력 / 감사로그 섹션 -->
+                <div class="audit-section" id="auditSection" style="display:none">
+                  <div class="audit-section-hd">
+                    <span>변경이력</span>
+                    <button type="button" id="auditRefreshBtn" class="btn btn-sm">새로고침</button>
+                  </div>
+                  <div id="auditList" class="audit-list"></div>
                 </div>
 
                 <div class="form-footer">
@@ -665,7 +695,7 @@
     <label class="form-field"><span>플랜 *</span><select id="runPlanSelect" class="form-input"></select></label>
     <label class="form-field"><span>스위트 *</span><select id="runSuiteSelect" class="form-input"></select></label>
     <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 스위트 이름으로 생성"></label>
-    <label class="form-field"><span>담당자</span><input id="runAssigneeInput" class="form-input" maxlength="100"></label>
+    <label class="form-field"><span>담당자</span><select id="runAssigneeInput" class="form-input"><option value="">담당자 없음</option></select></label>
     <div class="plan-form-actions">
       <button type="button" class="btn btn-sm" id="newRunCancelButton">취소</button>
       <button type="button" class="btn btn-sm btn-pri" id="newRunCreateButton">생성</button>
@@ -716,6 +746,29 @@
             </div>
             <label class="configuration-active"><input id="configurationActive" type="checkbox" checked> 활성 configuration</label>
             <div class="plan-form-actions"><button id="deleteConfigurationButton" type="button" class="btn btn-sm btn-danger" disabled>삭제</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="set-card configuration-card">
+        <div class="configuration-card-header">
+          <div><h3>사용자 / 역할 관리</h3><p>담당자 선택과 권한 구분에 사용할 사용자를 관리합니다.</p></div>
+          <button id="newUserButton" type="button" class="btn btn-sm">＋ 새 사용자</button>
+        </div>
+        <div class="configuration-manager">
+          <div id="userList" class="configuration-list"></div>
+          <form id="userForm" class="configuration-form">
+            <input id="userId" type="hidden">
+            <label class="form-field"><span>이름 *</span><input id="userName" class="form-input" maxlength="100" required></label>
+            <label class="form-field"><span>이메일</span><input id="userEmail" type="email" class="form-input" maxlength="200" placeholder="owner@example.com"></label>
+            <label class="form-field"><span>역할 *</span><select id="userRole" class="form-input" required>
+              <option value="QA">QA</option>
+              <option value="QA_LEAD">QA Lead</option>
+              <option value="DEVELOPER">Developer</option>
+              <option value="VIEWER">Viewer</option>
+              <option value="ADMIN">Admin</option>
+            </select></label>
+            <label class="configuration-active"><input id="userActive" type="checkbox" checked> 활성 사용자</label>
+            <div class="plan-form-actions"><button id="deleteUserButton" type="button" class="btn btn-sm btn-danger" disabled>비활성화</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
           </form>
         </div>
       </div>

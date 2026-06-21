@@ -3,6 +3,7 @@ package com.tms.testcase.controller;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.MoveToFolderRequest;
 import com.tms.testcase.dto.TestCaseResponse;
+import com.tms.testcase.dto.TestCaseVersionResponse;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseStatusRequest;
 import com.tms.testcase.entity.TestCaseBrowser;
@@ -79,6 +80,19 @@ public class TestCaseController {
             @Valid @RequestBody UpdateTestCaseStatusRequest request
     ) {
         return ResponseEntity.ok(testCaseService.updateTestCaseStatus(id, request));
+    }
+
+    @GetMapping("/{id}/versions")
+    public ResponseEntity<List<TestCaseVersionResponse>> getVersions(@PathVariable Long id) {
+        return ResponseEntity.ok(testCaseService.getVersions(id));
+    }
+
+    @PostMapping("/{id}/versions/{versionId}/restore")
+    public ResponseEntity<TestCaseResponse> restoreVersion(
+            @PathVariable Long id,
+            @PathVariable Long versionId
+    ) {
+        return ResponseEntity.ok(testCaseService.restoreVersion(id, versionId));
     }
 
     @DeleteMapping("/{id}")

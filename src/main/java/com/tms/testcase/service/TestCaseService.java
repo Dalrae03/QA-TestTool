@@ -1,5 +1,7 @@
 package com.tms.testcase.service;
 
+import com.tms.audit.entity.AuditAction;
+import com.tms.audit.service.AuditLogService;
 import com.tms.attachment.entity.AttachmentEntityType;
 import com.tms.attachment.service.AttachmentService;
 import com.tms.configuration.entity.TestConfiguration;
@@ -11,6 +13,7 @@ import com.tms.environment.repository.ServerEnvironmentRepository;
 import com.tms.global.exception.InvalidRequestException;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.TestCaseResponse;
+import com.tms.testcase.dto.TestCaseVersionResponse;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseStatusRequest;
 import com.tms.testcase.entity.AreaTag;
@@ -21,10 +24,12 @@ import com.tms.testcase.entity.TestCaseOs;
 import com.tms.testcase.entity.TestCasePriority;
 import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
+import com.tms.testcase.entity.TestCaseVersion;
 import com.tms.testcase.entity.TestFolder;
 import com.tms.testcase.repository.AreaTagRepository;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testcase.repository.TestCaseSpecification;
+import com.tms.testcase.repository.TestCaseVersionRepository;
 import com.tms.testcase.repository.TestFolderRepository;
 import com.tms.testrun.repository.TestRunRepository;
 import com.tms.testsuite.service.TestSuiteService;
@@ -34,6 +39,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.jpa.domain.Specification;
@@ -53,6 +59,8 @@ public class TestCaseService {
     private final AttachmentService attachmentService;
     private final TestFolderRepository testFolderRepository;
     private final TestRunRepository testRunRepository;
+    private final AuditLogService auditLogService;
+    private final TestCaseVersionRepository testCaseVersionRepository;
 
     public TestCaseService(
             TestCaseRepository testCaseRepository,
@@ -63,7 +71,9 @@ public class TestCaseService {
             DefectService defectService,
             AttachmentService attachmentService,
             TestFolderRepository testFolderRepository,
-            TestRunRepository testRunRepository
+            TestRunRepository testRunRepository,
+            AuditLogService auditLogService,
+            TestCaseVersionRepository testCaseVersionRepository
     ) {
         this.testCaseRepository = testCaseRepository;
         this.areaTagRepository = areaTagRepository;
@@ -74,6 +84,8 @@ public class TestCaseService {
         this.attachmentService = attachmentService;
         this.testFolderRepository = testFolderRepository;
         this.testRunRepository = testRunRepository;
+        this.auditLogService = auditLogService;
+        this.testCaseVersionRepository = testCaseVersionRepository;
     }
 
     public List<TestCaseResponse> getAllTestCases(
@@ -133,12 +145,16 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
-        return TestCaseResponse.from(testCaseRepository.save(testCase));
+        TestCase saved = testCaseRepository.save(testCase);
+        auditLogService.record(AuditLogService.TEST_CASE, saved.getId(), AuditAction.CREATED, "testCase", null, saved.getTitle());
+        createVersionSnapshot(saved, "최초 생성");
+        return TestCaseResponse.from(saved);
     }
 
     @Transactional
     public TestCaseResponse updateTestCase(Long id, UpdateTestCaseRequest request) {
         TestCase testCase = findById(id);
+        TestCaseAuditSnapshot before = TestCaseAuditSnapshot.from(testCase);
         List<AreaTag> areaTags = loadAreaTags(request.areaTagIds());
         ServerEnvironment serverEnvironment = loadServerEnvironment(request.serverEnvironmentId());
         TestConfiguration configuration = loadTestConfiguration(request.testConfigurationId());
@@ -162,21 +178,87 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
+        recordTestCaseUpdates(id, before, TestCaseAuditSnapshot.from(testCase));
+        createVersionSnapshot(testCase, "테스트케이스 수정");
         return TestCaseResponse.from(testCase);
     }
 
     @Transactional
     public TestCaseResponse moveToFolder(Long testCaseId, Long folderId) {
         TestCase testCase = findById(testCaseId);
+        String before = folderName(testCase.getFolder());
         TestFolder folder = loadFolder(folderId);
         testCase.moveToFolder(folder);
+        auditLogService.recordIfChanged(
+                AuditLogService.TEST_CASE,
+                testCaseId,
+                AuditAction.MOVED,
+                "folder",
+                before,
+                folderName(folder)
+        );
+        createVersionSnapshot(testCase, "폴더 변경");
         return TestCaseResponse.from(testCase);
     }
 
     @Transactional
     public TestCaseResponse updateTestCaseStatus(Long id, UpdateTestCaseStatusRequest request) {
         TestCase testCase = findById(id);
+        TestCaseStatus before = testCase.getStatus();
         testCase.updateStatus(request.status());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.STATUS_CHANGED, "status", before, request.status());
+        createVersionSnapshot(testCase, "상태 변경");
+        return TestCaseResponse.from(testCase);
+    }
+
+    public List<TestCaseVersionResponse> getVersions(Long testCaseId) {
+        findById(testCaseId);
+        return testCaseVersionRepository.findByTestCaseIdOrderByVersionNumberDesc(testCaseId)
+                .stream()
+                .map(TestCaseVersionResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public TestCaseResponse restoreVersion(Long testCaseId, Long versionId) {
+        TestCase testCase = findById(testCaseId);
+        TestCaseVersion version = testCaseVersionRepository.findByIdAndTestCaseId(versionId, testCaseId)
+                .orElseThrow(() -> new EntityNotFoundException("TestCaseVersion not found. id=" + versionId));
+        TestCaseAuditSnapshot before = TestCaseAuditSnapshot.from(testCase);
+        List<AreaTag> areaTags = loadAreaTags(parseIds(version.getAreaTagIds()));
+        ServerEnvironment serverEnvironment = loadServerEnvironment(version.getServerEnvironmentId());
+        TestConfiguration configuration = loadTestConfiguration(version.getTestConfigurationId());
+        TestFolder folder = loadFolder(version.getFolderId());
+
+        testCase.update(
+                version.getType(),
+                version.getPriority(),
+                version.getStatus(),
+                version.getTitle(),
+                version.getDescription(),
+                version.getPrecondition(),
+                version.getSteps(),
+                version.getNotes(),
+                version.getOs(),
+                version.getBrowser(),
+                version.getDevice(),
+                areaTags,
+                serverEnvironment,
+                configuration,
+                version.getAssignee(),
+                version.getVersion()
+        );
+        testCase.moveToFolder(folder);
+        recordTestCaseUpdates(testCaseId, before, TestCaseAuditSnapshot.from(testCase));
+        auditLogService.record(
+                AuditLogService.TEST_CASE,
+                testCaseId,
+                AuditAction.VERSION_RESTORED,
+                "version",
+                null,
+                version.getLabel()
+        );
+        createVersionSnapshot(testCase, "버전 복원: " + version.getLabel());
         return TestCaseResponse.from(testCase);
     }
 
@@ -184,7 +266,11 @@ public class TestCaseService {
     public TestCaseResponse linkDefect(Long testCaseId, Long defectId) {
         TestCase testCase = findById(testCaseId);
         Defect defect = defectService.findById(defectId);
+        boolean alreadyLinked = testCase.getDefects().stream().anyMatch(item -> Objects.equals(item.getId(), defectId));
         testCase.linkDefect(defect);
+        if (!alreadyLinked) {
+            auditLogService.record(AuditLogService.TEST_CASE, testCaseId, AuditAction.DEFECT_LINKED, "defects", null, defectLabel(defect));
+        }
         return TestCaseResponse.from(testCase);
     }
 
@@ -192,13 +278,19 @@ public class TestCaseService {
     public TestCaseResponse unlinkDefect(Long testCaseId, Long defectId) {
         TestCase testCase = findById(testCaseId);
         Defect defect = defectService.findById(defectId);
+        boolean wasLinked = testCase.getDefects().stream().anyMatch(item -> Objects.equals(item.getId(), defectId));
         testCase.unlinkDefect(defect);
+        if (wasLinked) {
+            auditLogService.record(AuditLogService.TEST_CASE, testCaseId, AuditAction.DEFECT_UNLINKED, "defects", defectLabel(defect), null);
+        }
         return TestCaseResponse.from(testCase);
     }
 
     @Transactional
     public void deleteTestCase(Long id) {
         TestCase testCase = findById(id);
+        auditLogService.record(AuditLogService.TEST_CASE, id, AuditAction.DELETED, "testCase", testCase.getTitle(), null);
+        testCaseVersionRepository.deleteAllByTestCaseId(id);
         testRunRepository.deleteAllByTestCaseId(id);
         testSuiteService.removeTestCaseFromAllSuites(id);
         attachmentService.deleteAllByEntity(AttachmentEntityType.TEST_CASE, id);
@@ -248,5 +340,123 @@ public class TestCaseService {
         return uniqueTagIds.stream()
                 .map(areaTagsById::get)
                 .toList();
+    }
+
+    private void recordTestCaseUpdates(Long id, TestCaseAuditSnapshot before, TestCaseAuditSnapshot after) {
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "type", before.type(), after.type());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "priority", before.priority(), after.priority());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.STATUS_CHANGED, "status", before.status(), after.status());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "title", before.title(), after.title());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "description", before.description(), after.description());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "precondition", before.precondition(), after.precondition());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "steps", before.steps(), after.steps());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "notes", before.notes(), after.notes());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "os", before.os(), after.os());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "browser", before.browser(), after.browser());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "device", before.device(), after.device());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "assignee", before.assignee(), after.assignee());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "version", before.version(), after.version());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.MOVED, "folder", before.folder(), after.folder());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "serverEnvironment", before.serverEnvironment(), after.serverEnvironment());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "testConfiguration", before.testConfiguration(), after.testConfiguration());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "areaTags", before.areaTags(), after.areaTags());
+    }
+
+    private void createVersionSnapshot(TestCase testCase, String changeSummary) {
+        Integer nextVersionNumber = testCaseVersionRepository.findTopByTestCaseIdOrderByVersionNumberDesc(testCase.getId())
+                .map(version -> version.getVersionNumber() + 1)
+                .orElse(1);
+        String label = (testCase.getVersion() == null || testCase.getVersion().isBlank())
+                ? "v" + nextVersionNumber
+                : testCase.getVersion();
+        TestCaseVersion snapshot = testCaseVersionRepository.save(new TestCaseVersion(
+                testCase.getId(),
+                nextVersionNumber,
+                label,
+                changeSummary,
+                testCase.getType(),
+                testCase.getPriority(),
+                testCase.getStatus(),
+                testCase.getTitle(),
+                testCase.getVersion(),
+                testCase.getDescription(),
+                testCase.getPrecondition(),
+                testCase.getSteps(),
+                testCase.getNotes(),
+                testCase.getOs(),
+                testCase.getBrowser(),
+                testCase.getDevice(),
+                testCase.getAssignee(),
+                testCase.getFolder() == null ? null : testCase.getFolder().getId(),
+                testCase.getFolder() == null ? null : testCase.getFolder().getName(),
+                testCase.getServerEnvironment() == null ? null : testCase.getServerEnvironment().getId(),
+                testCase.getServerEnvironment() == null ? null : testCase.getServerEnvironment().getName(),
+                testCase.getTestConfiguration() == null ? null : testCase.getTestConfiguration().getId(),
+                testCase.getTestConfiguration() == null ? null : testCase.getTestConfiguration().getName(),
+                testCase.getAreaTags().stream().map(AreaTag::getId).map(String::valueOf).collect(Collectors.joining(",")),
+                testCase.getAreaTags().stream().map(AreaTag::getName).collect(Collectors.joining(", "))
+        ));
+        auditLogService.record(AuditLogService.TEST_CASE, testCase.getId(), AuditAction.VERSION_CREATED, "version", null, snapshot.getLabel());
+    }
+
+    private List<Long> parseIds(String ids) {
+        if (ids == null || ids.isBlank()) {
+            return Collections.emptyList();
+        }
+        return List.of(ids.split(","))
+                .stream()
+                .filter(value -> !value.isBlank())
+                .map(Long::valueOf)
+                .toList();
+    }
+
+    private static String folderName(TestFolder folder) {
+        return folder == null ? "미분류" : folder.getName();
+    }
+
+    private static String defectLabel(Defect defect) {
+        return "#" + defect.getId() + " " + defect.getTitle();
+    }
+
+    private record TestCaseAuditSnapshot(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            String assignee,
+            String version,
+            String folder,
+            String serverEnvironment,
+            String testConfiguration,
+            String areaTags
+    ) {
+        static TestCaseAuditSnapshot from(TestCase testCase) {
+            return new TestCaseAuditSnapshot(
+                    testCase.getType(),
+                    testCase.getPriority(),
+                    testCase.getStatus(),
+                    testCase.getTitle(),
+                    testCase.getDescription(),
+                    testCase.getPrecondition(),
+                    testCase.getSteps(),
+                    testCase.getNotes(),
+                    testCase.getOs(),
+                    testCase.getBrowser(),
+                    testCase.getDevice(),
+                    testCase.getAssignee(),
+                    testCase.getVersion(),
+                    folderName(testCase.getFolder()),
+                    testCase.getServerEnvironment() == null ? null : testCase.getServerEnvironment().getName(),
+                    testCase.getTestConfiguration() == null ? null : testCase.getTestConfiguration().getName(),
+                    testCase.getAreaTags().stream().map(AreaTag::getName).collect(Collectors.joining(", "))
+            );
+        }
     }
 }
