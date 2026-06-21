@@ -17,6 +17,8 @@ const state = {
   testSuites: [],
   selectedPlanId: null,
   selectedSuiteId: null,
+  executions: [],            // 테스트런(실행 사이클) 목록
+  selectedExecutionId: null,
   areaTags: [],
   allDefects: [],
   serverEnvironments: [],
@@ -118,12 +120,13 @@ function switchView(v) {
   document.querySelectorAll(".app-view").forEach(el => el.classList.remove("active"));
   const el = document.getElementById("view-" + v);
   if (el) el.classList.add("active");
-  const map = { dashboard: "navDash", testcases: "navTC", plans: "navPlans", settings: "navSet" };
+  const map = { dashboard: "navDash", testcases: "navTC", plans: "navPlans", runs: "navRuns", settings: "navSet" };
   document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
   const t = document.getElementById(map[v]);
   if (t) t.classList.add("active");
   if (v === "dashboard") renderDashboard();
   if (v === "plans") loadTestPlans();
+  if (v === "runs") loadExecutions();
   if (v === "settings") { loadTestConfigurations(); loadAreaTags(); }
 }
 
@@ -202,10 +205,17 @@ function updateStatus(msg) {
 }
 function updateRunStatus(msg) { if (elements.runState) elements.runState.textContent = msg; }
 function _toast(msg, isError = false) {
+  let container = document.getElementById("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none";
+    document.body.appendChild(container);
+  }
   const el = document.createElement("div");
-  el.style.cssText = `position:fixed;top:16px;left:50%;transform:translateX(-50%);background:${isError ? "#dc2626" : "var(--accent)"};color:#fff;padding:8px 20px;border-radius:8px;font-size:12px;font-weight:500;z-index:9999;box-shadow:var(--shadow-md);pointer-events:none;max-width:400px;text-align:center`;
+  el.style.cssText = `background:${isError ? "#dc2626" : "var(--accent)"};color:#fff;padding:8px 20px;border-radius:8px;font-size:12px;font-weight:500;box-shadow:var(--shadow-md);pointer-events:none;max-width:400px;text-align:center;animation:rise .2s ease both`;
   el.textContent = msg;
-  document.body.appendChild(el);
+  container.appendChild(el);
   setTimeout(() => el.remove(), 2500);
 }
 
@@ -858,6 +868,41 @@ function renderDashboard() {
   if (g("dashIssueCount")) g("dashIssueCount").textContent = `${issues.length}건`;
   const il = g("dashIssueList");
   if (il) { const pc = { HIGH:"b-hi",MEDIUM:"b-mid",LOW:"b-lo" }; il.innerHTML = issues.length===0 ? '<p style="font-size:12px;color:var(--text-muted)">검토가 필요한 이슈가 없습니다.</p>' : issues.map(tc=>`<div class="issue-item" onclick="switchView('testcases')"><div class="issue-item-title">${escapeHtml(tc.title)}</div><div class="issue-item-meta"><span class="badge b-review">검토 필요</span><span class="badge ${pc[tc.priority]||"b-mid"}">${escapeHtml(tc.priority??"MEDIUM")}</span></div></div>`).join(""); }
+  renderDashboardRuns();
+}
+
+// 대시보드 테스트런 현황 — 전체 런 집계 + 통과율
+async function renderDashboardRuns() {
+  const g = id => document.getElementById(id);
+  const body = g("dashRunBody"), empty = g("dashRunEmpty");
+  if (!body || !empty) return;
+  let runs = [];
+  try { runs = await request("/api/test-runs", { method: "GET" }); } catch (_e) { runs = []; }
+  if (runs.length === 0) { body.hidden = true; empty.hidden = false; return; }
+  empty.hidden = true; body.hidden = false;
+
+  const sum = runs.reduce((a, r) => ({
+    total:    a.total    + (r.total    || 0),
+    passed:   a.passed   + (r.passed   || 0),
+    failed:   a.failed   + (r.failed   || 0),
+    blocked:  a.blocked  + (r.blocked  || 0),
+    retest:   a.retest   + (r.retest   || 0),
+    untested: a.untested + (r.untested || 0)
+  }), { total: 0, passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 });
+  const executed = sum.total - sum.untested;
+  const passRate = executed ? Math.round((sum.passed / executed) * 100) : 0;
+
+  g("dashRunTotal").textContent  = runs.length;
+  g("dashRunActive").textContent = runs.filter(r => r.status === "IN_PROGRESS").length;
+  g("dashRunDone").textContent   = runs.filter(r => r.status === "COMPLETED").length;
+  g("dashRunPass").textContent   = `${passRate}%`;
+  renderSegmentBar(g("dashRunBar"), sum);
+  g("dashRunChips").innerHTML =
+    `<span class="suite-run-chip pass">통과 ${sum.passed}</span>` +
+    `<span class="suite-run-chip fail">실패 ${sum.failed}</span>` +
+    `<span class="suite-run-chip block">차단 ${sum.blocked}</span>` +
+    (sum.retest ? `<span class="suite-run-chip retest">재테스트 ${sum.retest}</span>` : "") +
+    `<span class="suite-run-prog" style="margin-left:4px">미실행 ${sum.untested}</span>`;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2566,6 +2611,7 @@ function hidePlanEditors() {
   document.getElementById("planEditorEmpty").hidden = true;
   document.getElementById("planForm").hidden = true;
   document.getElementById("suiteForm").hidden = true;
+  document.getElementById("suiteRunPanel").hidden = true;
 }
 
 function showPlanForm(plan = null) {
@@ -2592,7 +2638,113 @@ function showSuiteForm(suite = null) {
   document.getElementById("suiteName").value = suite?.name ?? "";
   document.getElementById("suiteDescription").value = suite?.description ?? "";
   document.getElementById("deleteSuiteButton").disabled = !suite;
+  document.getElementById("suiteRunFromEditButton").hidden = !suite;
   renderSuiteCasePicker(suite?.testCases?.map(testCase => testCase.id) ?? []);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 스위트 실행 — 케이스별 PASS/FAIL/BLOCK 기록 (TestRun API 재사용)
+// ══════════════════════════════════════════════════════════════════
+
+const SUITE_RUN_LABEL = { PASSED: "통과", FAILED: "실패", BLOCKED: "차단" };
+
+function showSuiteRun(suite = null) {
+  if (!state.selectedPlanId) return;
+  const resolved = suite || state.testSuites.find(s => s.id === state.selectedSuiteId);
+  if (!resolved) { showPlanForm(state.testPlans.find(p => p.id === state.selectedPlanId)); return; }
+  hidePlanEditors();
+  document.getElementById("suiteRunPanel").hidden = false;
+  document.getElementById("suiteRunTitle").textContent = `${resolved.name} 빠른 실행`;
+  loadSuiteRun(resolved);
+}
+
+// 통과/실패/차단/재테스트를 비율대로 이어 붙인 세그먼트 진행바. 미실행은 빈 트랙으로 남는다.
+function renderSegmentBar(barEl, c = {}) {
+  if (!barEl) return;
+  const total = c.total || 0;
+  const seg = (n, cls) => n > 0 ? `<div class="bar-seg ${cls}" style="width:${(n / total) * 100}%"></div>` : "";
+  barEl.innerHTML = total === 0 ? "" :
+    seg(c.passed, "pass") + seg(c.failed, "fail") + seg(c.blocked, "block") + seg(c.retest, "retest");
+}
+
+async function loadSuiteRun(suite) {
+  const cases = suite.testCases ?? [];
+  const cont = document.getElementById("suiteRunCases");
+  if (cases.length === 0) {
+    document.getElementById("suiteRunStats").textContent = "";
+    renderSegmentBar(document.getElementById("suiteRunBar"), { total: 0 });
+    cont.innerHTML = '<div class="plan-empty">이 스위트에 배정된 테스트케이스가 없습니다. 편집에서 케이스를 추가하세요.</div>';
+    return;
+  }
+  cont.innerHTML = '<div class="plan-empty">실행 이력을 불러오는 중…</div>';
+  // 각 케이스의 최신 실행 결과 조회 (응답은 executedAt 내림차순)
+  const latest = {};
+  await Promise.all(cases.map(async tc => {
+    try {
+      const runs = await request(`/api/testcases/${tc.id}/runs`, { method: "GET" });
+      latest[tc.id] = runs[0] ?? null;
+    } catch (_e) { latest[tc.id] = null; }
+  }));
+  renderSuiteRun(suite, latest);
+}
+
+function renderSuiteRun(suite, latest) {
+  const cases = suite.testCases ?? [];
+  const total = cases.length;
+  const executed = cases.filter(tc => latest[tc.id]).length;
+  const pass  = cases.filter(tc => latest[tc.id]?.status === "PASSED").length;
+  const fail  = cases.filter(tc => latest[tc.id]?.status === "FAILED").length;
+  const block = cases.filter(tc => latest[tc.id]?.status === "BLOCKED").length;
+
+  const pct = total ? Math.round((executed / total) * 100) : 0;
+  renderSegmentBar(document.getElementById("suiteRunBar"), { total, passed: pass, failed: fail, blocked: block });
+  document.getElementById("suiteRunStats").innerHTML =
+    `<span class="suite-run-prog">${executed}/${total} 실행 (${pct}%)</span>` +
+    `<span class="suite-run-chip pass">통과 ${pass}</span>` +
+    `<span class="suite-run-chip fail">실패 ${fail}</span>` +
+    `<span class="suite-run-chip block">차단 ${block}</span>`;
+
+  const cont = document.getElementById("suiteRunCases");
+  cont.innerHTML = "";
+  cases.forEach(tc => {
+    const run = latest[tc.id];
+    const statusKey = run ? run.status.toLowerCase() : "none";
+    const badge = run
+      ? `<span class="suite-run-badge ${statusKey}">${SUITE_RUN_LABEL[run.status] || run.status}</span><span class="suite-run-when">${escapeHtml(formatDateTime(run.executedAt))}</span>`
+      : `<span class="suite-run-badge none">미실행</span>`;
+    const row = document.createElement("div");
+    row.className = "suite-run-case";
+    row.innerHTML =
+      `<div class="suite-run-case-hd">` +
+        `<span class="suite-run-tc">TC-${String(tc.id).padStart(3, "0")}</span>` +
+        `<span class="suite-run-name" title="${escapeHtml(tc.title)}">${escapeHtml(tc.title)}</span>` +
+        badge +
+      `</div>` +
+      `<div class="suite-run-case-actions">` +
+        `<input class="form-input suite-run-note" placeholder="실제 결과 / 비고 (선택)">` +
+        `<button type="button" class="btn btn-sm suite-run-btn pass" data-s="PASSED">통과</button>` +
+        `<button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>` +
+        `<button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>` +
+      `</div>`;
+    const note = row.querySelector(".suite-run-note");
+    row.querySelectorAll(".suite-run-btn").forEach(btn => {
+      btn.addEventListener("click", () => recordSuiteCaseRun(suite, tc, btn.dataset.s, note.value.trim(), latest));
+    });
+    cont.appendChild(row);
+  });
+}
+
+async function recordSuiteCaseRun(suite, testCase, status, note, latest) {
+  const actualResult = note || `${SUITE_RUN_LABEL[status]} 처리`;
+  try {
+    const created = await request(`/api/testcases/${testCase.id}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ status, actualResult, notes: note || null })
+    });
+    latest[testCase.id] = created;
+    renderSuiteRun(suite, latest);
+    _toast(`TC-${String(testCase.id).padStart(3, "0")} ${SUITE_RUN_LABEL[status]} 기록됨`);
+  } catch (e) { _toast(`실행 기록 실패: ${e.message}`, true); }
 }
 
 function renderSuiteCasePicker(selectedIds) {
@@ -2674,6 +2826,287 @@ async function deleteSelectedSuite() {
     _toast("테스트 스위트를 삭제했습니다.");
     await loadTestPlans();
   } catch (error) { _toast(`스위트 삭제 실패: ${error.message}`, true); }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 테스트런 (실행 사이클) — 스위트 스냅샷 + 케이스별 결과 기록
+// ══════════════════════════════════════════════════════════════════
+
+const RESULT_LABEL = { UNTESTED: "미실행", PASSED: "통과", FAILED: "실패", BLOCKED: "차단", RETEST: "재테스트" };
+const RESULT_CLASS = { UNTESTED: "untested", PASSED: "passed", FAILED: "failed", BLOCKED: "blocked", RETEST: "retest" };
+const EXEC_STATUS_LABEL = { IN_PROGRESS: "진행 중", COMPLETED: "완료" };
+
+async function loadExecutions() {
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    state.executions = await request("/api/test-runs", { method: "GET" });
+    renderExecutionList();
+    if (state.selectedExecutionId && state.executions.some(e => e.id === state.selectedExecutionId)) {
+      await openExecution(state.selectedExecutionId);
+    } else {
+      state.selectedExecutionId = null;
+      document.getElementById("runDetail").hidden = true;
+      document.getElementById("runDetailEmpty").hidden = false;
+    }
+  } catch (e) {
+    state.executions = []; renderExecutionList();
+    state.selectedExecutionId = null;
+    document.getElementById("runDetail").hidden = true;
+    document.getElementById("runDetailEmpty").hidden = false;
+    _toast(`테스트런 조회 실패: ${e.message}`, true);
+  }
+}
+
+function renderExecutionList() {
+  const list = document.getElementById("runList");
+  const empty = document.getElementById("runEmpty");
+  document.getElementById("runCount").textContent = state.executions.length;
+  list.innerHTML = "";
+  if (state.executions.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+  state.executions.forEach(exec => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `run-cycle-item${exec.id === state.selectedExecutionId ? " active" : ""}`;
+    const done = exec.total - exec.untested;
+    item.innerHTML =
+      `<div class="run-cycle-name">${escapeHtml(exec.name)}</div>` +
+      `<div class="run-cycle-meta">` +
+        `<span class="badge ${exec.status === "COMPLETED" ? "b-pass" : "b-tag"}">${EXEC_STATUS_LABEL[exec.status] || exec.status}</span>` +
+        `<span>${done}/${exec.total} (${exec.progressPct}%)</span>` +
+        (exec.failed ? `<span class="run-cycle-fail">실패 ${exec.failed}</span>` : "") +
+      `</div>`;
+    item.addEventListener("click", () => openExecution(exec.id));
+    list.appendChild(item);
+  });
+}
+
+async function openExecution(id) {
+  state.selectedExecutionId = id;
+  try {
+    const exec = await request(`/api/test-runs/${id}`, { method: "GET" });
+    renderExecutionDetail(exec);
+    renderExecutionList();
+  } catch (e) { _toast(`테스트런 조회 실패: ${e.message}`, true); }
+}
+
+// 결과 분포 도넛 차트 (완료 리포트용)
+function donutSvg(c) {
+  const total = c.total || 0;
+  const r = 54, cx = 70, cy = 70, sw = 20, C = 2 * Math.PI * r;
+  const segs = [
+    { n: c.passed,  color: "var(--c-pass)" },
+    { n: c.failed,  color: "var(--c-fail)" },
+    { n: c.blocked, color: "#b45309" },
+    { n: c.retest,  color: "#d97706" },
+    { n: c.untested, color: "#e5e5e3" }
+  ].filter(s => s.n > 0);
+  let offset = 0;
+  const arcs = total === 0
+    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e5e3" stroke-width="${sw}"/>`
+    : segs.map(s => {
+        const len = (s.n / total) * C;
+        const el = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+        offset += len;
+        return el;
+      }).join("");
+  const executed = total - c.untested;
+  const passRate = executed ? Math.round((c.passed / executed) * 100) : 0;
+  return `<svg width="140" height="140" viewBox="0 0 140 140" class="run-donut">${arcs}` +
+    `<text x="${cx}" y="${cy - 1}" text-anchor="middle" class="run-donut-pct">${passRate}%</text>` +
+    `<text x="${cx}" y="${cy + 17}" text-anchor="middle" class="run-donut-sub">통과율</text></svg>`;
+}
+
+function renderExecutionDetail(exec) {
+  document.getElementById("runDetailEmpty").hidden = true;
+  document.getElementById("runDetail").hidden = false;
+  document.getElementById("runDetailName").textContent = exec.name;
+  const created = exec.createdAt ? formatDateTime(exec.createdAt) : "";
+  const isCompleted = exec.status === "COMPLETED";
+  const completedAt = exec.completedAt ? formatDateTime(exec.completedAt) : "";
+  document.getElementById("runDetailMeta").textContent =
+    `${exec.suiteName || "스위트"} · 생성 ${created}${exec.assignee ? " · " + exec.assignee : ""}` +
+    (isCompleted && completedAt ? ` · 완료 ${completedAt}` : "");
+
+  const statusBadge = document.getElementById("runDetailStatus");
+  statusBadge.textContent = EXEC_STATUS_LABEL[exec.status] || exec.status;
+  statusBadge.className = `badge ${isCompleted ? "b-pass" : "b-tag"}`;
+
+  document.getElementById("runCompleteButton").textContent = isCompleted ? "다시 열기" : "완료 처리";
+
+  const done = exec.total - exec.untested;
+  const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
+  const chips =
+    `<span class="suite-run-chip pass">통과 ${exec.passed}</span>` +
+    `<span class="suite-run-chip fail">실패 ${exec.failed}</span>` +
+    `<span class="suite-run-chip block">차단 ${exec.blocked}</span>` +
+    (exec.retest ? `<span class="suite-run-chip retest">재테스트 ${exec.retest}</span>` : "") +
+    (exec.untested ? `<span class="suite-run-chip">미실행 ${exec.untested}</span>` : "");
+
+  const progress = document.getElementById("runDetailProgress");
+  const report = document.getElementById("runDetailReport");
+
+  if (isCompleted) {
+    // ── TestRail식 완료 리포트: 도넛 + 요약 (읽기 전용) ──
+    progress.hidden = true;
+    report.hidden = false;
+    report.innerHTML =
+      `<div class="run-report-chart">${donutSvg(counts)}</div>` +
+      `<div class="run-report-summary">` +
+        `<div class="run-report-line"><span class="run-report-num">${done}/${exec.total}</span><span class="run-report-cap">실행 완료</span></div>` +
+        `<div class="suite-run-stats" style="margin-top:6px">${chips}</div>` +
+        (completedAt ? `<div class="run-report-when">완료 ${completedAt}</div>` : "") +
+      `</div>`;
+  } else {
+    progress.hidden = false;
+    report.hidden = true;
+    renderSegmentBar(document.getElementById("runDetailBar"), counts);
+    document.getElementById("runDetailStats").innerHTML =
+      `<span class="suite-run-prog">${done}/${exec.total} 실행 (${exec.progressPct}%)</span>` + chips;
+  }
+
+  const cont = document.getElementById("runDetailItems");
+  cont.innerHTML = "";
+  (exec.items || []).forEach(item => {
+    const row = document.createElement("div");
+    row.className = `suite-run-case${isCompleted ? " is-locked" : ""}`;
+    const cls = RESULT_CLASS[item.status] || "untested";
+    const head =
+      `<div class="suite-run-case-hd">` +
+        `<span class="suite-run-tc">TC-${String(item.testCaseId).padStart(3, "0")}</span>` +
+        `<span class="suite-run-name" title="${escapeHtml(item.caseTitle)}">${escapeHtml(item.caseTitle)}</span>` +
+        `<span class="suite-run-badge ${cls}">${RESULT_LABEL[item.status] || item.status}</span>` +
+        (item.executedAt ? `<span class="suite-run-when">${escapeHtml(formatDateTime(item.executedAt))}</span>` : "") +
+      `</div>`;
+    if (isCompleted) {
+      // 읽기 전용: 결과 + 비고 텍스트만
+      row.innerHTML = head +
+        (item.comment ? `<div class="run-item-comment">${escapeHtml(item.comment)}</div>` : "");
+    } else {
+      row.innerHTML = head +
+        `<div class="suite-run-case-actions">` +
+          `<input class="form-input suite-run-note" placeholder="비고 (선택)" value="${escapeHtml(item.comment || "")}">` +
+          `<button type="button" class="btn btn-sm suite-run-btn pass" data-s="PASSED">통과</button>` +
+          `<button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>` +
+          `<button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>` +
+          `<button type="button" class="btn btn-sm suite-run-btn retest" data-s="RETEST">재테스트</button>` +
+        `</div>`;
+      const note = row.querySelector(".suite-run-note");
+      row.querySelectorAll(".suite-run-btn").forEach(btn => {
+        btn.addEventListener("click", () => recordExecutionItem(exec.id, item.id, btn.dataset.s, note.value.trim()));
+      });
+    }
+    cont.appendChild(row);
+  });
+}
+
+async function recordExecutionItem(executionId, itemId, status, comment) {
+  try {
+    const updated = await request(`/api/test-runs/${executionId}/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, comment: comment || null })
+    });
+    renderExecutionDetail(updated);
+    // 목록 집계 갱신
+    const idx = state.executions.findIndex(e => e.id === executionId);
+    if (idx >= 0) { state.executions[idx] = { ...state.executions[idx], ...summaryOf(updated) }; renderExecutionList(); }
+    _toast(`${RESULT_LABEL[status]} 기록됨`);
+  } catch (e) { _toast(`결과 기록 실패: ${e.message}`, true); }
+}
+
+function summaryOf(exec) {
+  const { items, ...rest } = exec;
+  return rest;
+}
+
+async function toggleExecutionComplete() {
+  const exec = await request(`/api/test-runs/${state.selectedExecutionId}`, { method: "GET" }).catch(() => null);
+  if (!exec) return;
+  const next = exec.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED";
+  try {
+    await request(`/api/test-runs/${exec.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: exec.name, description: exec.description || null, status: next, assignee: exec.assignee || null })
+    });
+    _toast(next === "COMPLETED" ? "테스트런을 완료 처리했습니다." : "테스트런을 다시 열었습니다.");
+    await loadExecutions();
+  } catch (e) { _toast(`상태 변경 실패: ${e.message}`, true); }
+}
+
+async function deleteSelectedExecution() {
+  if (!state.selectedExecutionId || !window.confirm("이 테스트런을 삭제할까요? 기록된 결과도 함께 삭제됩니다.")) return;
+  try {
+    await request(`/api/test-runs/${state.selectedExecutionId}`, { method: "DELETE" });
+    state.selectedExecutionId = null;
+    _toast("테스트런을 삭제했습니다.");
+    await loadExecutions();
+  } catch (e) { _toast(`삭제 실패: ${e.message}`, true); }
+}
+
+// ── 새 테스트런 모달 ───────────────────────────────────────────────
+
+async function openNewRunModal() {
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    state.testPlans = await request("/api/test-plans", { method: "GET" });
+  } catch (e) { _toast(`플랜 조회 실패: ${e.message}`, true); return; }
+  if (state.testPlans.length === 0) { _toast("먼저 테스트 플랜과 스위트를 만들어주세요.", true); return; }
+  const planSel = document.getElementById("runPlanSelect");
+  planSel.innerHTML = state.testPlans.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  document.getElementById("runNameInput").value = "";
+  document.getElementById("runAssigneeInput").value = "";
+  await populateRunSuiteSelect(Number(planSel.value));
+  document.getElementById("newRunModal").hidden = false;
+  document.getElementById("runPlanSelect").focus();
+}
+
+async function populateRunSuiteSelect(planId) {
+  const suiteSel = document.getElementById("runSuiteSelect");
+  suiteSel.innerHTML = "";
+  try {
+    const suites = await request(`/api/test-plans/${planId}/suites`, { method: "GET" });
+    if (suites.length === 0) { suiteSel.innerHTML = '<option value="">스위트 없음</option>'; return; }
+    const executable = suites.filter(s => (s.testCases?.length || 0) > 0);
+    if (executable.length === 0) {
+      suiteSel.innerHTML = '<option value="">실행 가능한 스위트 없음</option>';
+      return;
+    }
+    suiteSel.innerHTML = suites
+      .map(s => {
+        const count = s.testCases?.length || 0;
+        return `<option value="${s.id}" ${count === 0 ? "disabled" : ""}>${escapeHtml(s.name)} (${count}건${count === 0 ? " · 생성 불가" : ""})</option>`;
+      })
+      .join("");
+    suiteSel.value = String(executable[0].id);
+  } catch (e) { suiteSel.innerHTML = '<option value="">조회 실패</option>'; }
+}
+
+async function createExecution() {
+  const suiteId = Number(document.getElementById("runSuiteSelect").value);
+  if (!suiteId) { _toast("스위트를 선택하세요.", true); return; }
+  const createButton = document.getElementById("newRunCreateButton");
+  const payload = {
+    suiteId,
+    name: document.getElementById("runNameInput").value.trim() || null,
+    assignee: document.getElementById("runAssigneeInput").value.trim() || null
+  };
+  try {
+    createButton.disabled = true;
+    createButton.textContent = "생성 중...";
+    const created = await request("/api/test-runs", { method: "POST", body: JSON.stringify(payload) });
+    closeNewRunModal();
+    state.selectedExecutionId = created.id;
+    _toast(`테스트런 '${created.name}' 생성됨 (${created.total}건)`);
+    await loadExecutions();
+  } catch (e) { _toast(`테스트런 생성 실패: ${e.message}`, true); }
+  finally {
+    createButton.disabled = false;
+    createButton.textContent = "생성";
+  }
+}
+
+function closeNewRunModal() {
+  document.getElementById("newRunModal").hidden = true;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2775,7 +3208,6 @@ async function handleSubmit(event) {
 
   const payload = getPayload();
   const id      = elements.testCaseId.value;
-  console.log("[Save] payload:", payload, "id:", id);
 
   try {
     if (id) {
@@ -2946,6 +3378,20 @@ async function bootstrap() {
   document.getElementById("suiteForm").addEventListener("submit", saveSuite);
   document.getElementById("deletePlanButton").addEventListener("click", deleteSelectedPlan);
   document.getElementById("deleteSuiteButton").addEventListener("click", deleteSelectedSuite);
+  document.getElementById("suiteEditButton").addEventListener("click", () => showSuiteForm(state.testSuites.find(s => s.id === state.selectedSuiteId)));
+  document.getElementById("suiteRunFromEditButton").addEventListener("click", () => showSuiteRun());
+
+  document.getElementById("newRunButton").addEventListener("click", openNewRunModal);
+  document.getElementById("newRunCancelButton").addEventListener("click", closeNewRunModal);
+  document.getElementById("newRunCloseButton").addEventListener("click", closeNewRunModal);
+  document.getElementById("newRunCreateButton").addEventListener("click", createExecution);
+  document.getElementById("runPlanSelect").addEventListener("change", e => populateRunSuiteSelect(Number(e.target.value)));
+  document.getElementById("runCompleteButton").addEventListener("click", toggleExecutionComplete);
+  document.getElementById("runDeleteButton").addEventListener("click", deleteSelectedExecution);
+  document.getElementById("newRunModal").addEventListener("click", e => { if (e.target.id === "newRunModal") closeNewRunModal(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !document.getElementById("newRunModal").hidden) closeNewRunModal();
+  });
 
   const fab = document.getElementById("folderAddBtn");
   if (fab) fab.addEventListener("click", addFolder);

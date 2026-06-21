@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=1440">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*">
   <title>QA TestTool</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,6 +32,10 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
       테스트 플랜
     </button>
+    <button class="nav-tab" id="navRuns" onclick="switchView('runs')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      테스트런
+    </button>
     <button class="nav-tab" id="navSet" onclick="switchView('settings')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
       연결 설정
@@ -57,6 +62,23 @@
       <div class="stat-card"><div style="font-size:18px">✅</div><div class="stat-val" id="dashStatReady" style="color:var(--c-ready)">0</div><div class="stat-lbl">준비됨</div></div>
       <div class="stat-card"><div style="font-size:18px">⚠️</div><div class="stat-val" id="dashStatIssues" style="color:var(--c-review)">0</div><div class="stat-lbl">잔존 이슈</div></div>
       <div class="stat-card"><div style="font-size:18px">🏁</div><div class="stat-val" id="dashStatCompleted" style="color:var(--c-done)">0</div><div class="stat-lbl">완료</div></div>
+    </div>
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="detail-card-ttl" style="margin-bottom:0">테스트런 현황</div>
+        <span class="badge b-tag" style="cursor:pointer" onclick="switchView('runs')">테스트런 보기 →</span>
+      </div>
+      <div id="dashRunEmpty" style="font-size:12px;color:var(--text-muted)">아직 생성된 테스트런이 없습니다.</div>
+      <div id="dashRunBody" hidden>
+        <div class="dash-run-stats">
+          <div><div class="dash-run-num" id="dashRunTotal">0</div><div class="dash-run-lbl">전체 런</div></div>
+          <div><div class="dash-run-num" id="dashRunActive" style="color:var(--c-ready)">0</div><div class="dash-run-lbl">진행 중</div></div>
+          <div><div class="dash-run-num" id="dashRunDone" style="color:var(--c-done)">0</div><div class="dash-run-lbl">완료</div></div>
+          <div><div class="dash-run-num" id="dashRunPass" style="color:var(--c-pass)">0%</div><div class="dash-run-lbl">통과율</div></div>
+        </div>
+        <div class="suite-run-bar" id="dashRunBar" style="margin-top:14px"></div>
+        <div class="suite-run-stats" id="dashRunChips"></div>
+      </div>
     </div>
     <div class="dash-row2">
       <div class="detail-card">
@@ -577,13 +599,81 @@
         <label class="form-field"><span>스위트 이름 *</span><input id="suiteName" class="form-input" maxlength="200" required></label>
         <label class="form-field"><span>설명</span><textarea id="suiteDescription" class="form-input"></textarea></label>
         <div class="form-field"><span>테스트케이스</span><div id="suiteCasePicker" class="suite-case-picker"></div></div>
-        <div class="plan-form-actions"><button type="button" class="btn btn-sm btn-danger" id="deleteSuiteButton">삭제</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
+        <div class="plan-form-actions"><button type="button" class="btn btn-sm btn-danger" id="deleteSuiteButton">삭제</button><div class="action-group"><button type="button" class="btn btn-sm" id="suiteRunFromEditButton" hidden>빠른 실행</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div></div>
       </form>
+
+      <div id="suiteRunPanel" class="plan-form" hidden>
+        <div class="suite-run-head">
+          <div><div class="plan-editor-title" id="suiteRunTitle">스위트 빠른 실행</div><p class="suite-run-desc">임시 실행 기록입니다. 실행 사이클 관리는 상단의 테스트런 메뉴에서 진행하세요.</p></div>
+          <button type="button" class="btn btn-sm" id="suiteEditButton">✎ 편집</button>
+        </div>
+        <div class="suite-run-progress">
+          <div class="suite-run-bar" id="suiteRunBar"></div>
+          <div id="suiteRunStats" class="suite-run-stats"></div>
+        </div>
+        <div id="suiteRunCases" class="suite-run-cases"></div>
+      </div>
     </section>
   </div>
 </div>
 
-<!-- ══ 4. 연결 설정 ══ -->
+<!-- ══ 4. 테스트런 (실행 사이클) ══ -->
+<div class="app-view" id="view-runs">
+  <div class="view-hd plan-view-header">
+    <div>
+      <div class="view-eyebrow">Execution</div>
+      <div class="view-h2">테스트런</div>
+      <p class="view-sub">스위트를 선택해 실행 사이클을 만들고 결과를 기록합니다.</p>
+    </div>
+    <button class="btn btn-sm btn-pri" id="newRunButton">＋ 새 테스트런</button>
+  </div>
+  <div class="run-workspace">
+    <section class="run-list-column">
+      <div class="plan-column-title"><span>테스트런</span><span id="runCount" class="badge b-tag">0</span></div>
+      <div id="runEmpty" class="plan-empty">아직 테스트런이 없습니다. ‘새 테스트런’으로 시작하세요.</div>
+      <div id="runList" class="run-cycle-list"></div>
+    </section>
+    <section class="run-detail-column">
+      <div id="runDetailEmpty" class="plan-empty">테스트런을 선택하거나 새로 만드세요.</div>
+      <div id="runDetail" class="run-detail" hidden>
+        <div class="run-detail-head">
+          <div>
+            <div class="plan-editor-title" id="runDetailName">테스트런</div>
+            <div class="run-detail-meta" id="runDetailMeta"></div>
+          </div>
+          <div class="run-detail-actions">
+            <span class="badge" id="runDetailStatus"></span>
+            <button type="button" class="btn btn-sm" id="runCompleteButton">완료 처리</button>
+            <button type="button" class="btn btn-sm btn-danger" id="runDeleteButton">삭제</button>
+          </div>
+        </div>
+        <div class="suite-run-progress" id="runDetailProgress">
+          <div class="suite-run-bar" id="runDetailBar"></div>
+          <div id="runDetailStats" class="suite-run-stats"></div>
+        </div>
+        <div id="runDetailReport" class="run-report" hidden></div>
+        <div id="runDetailItems" class="run-detail-items"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- 새 테스트런 모달 -->
+<div id="newRunModal" class="modal-overlay" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="newRunModalTitle">
+    <div class="modal-head"><div class="modal-title" id="newRunModalTitle">새 테스트런</div><button type="button" class="modal-close" id="newRunCloseButton" aria-label="닫기">×</button></div>
+    <label class="form-field"><span>플랜 *</span><select id="runPlanSelect" class="form-input"></select></label>
+    <label class="form-field"><span>스위트 *</span><select id="runSuiteSelect" class="form-input"></select></label>
+    <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 스위트 이름으로 생성"></label>
+    <label class="form-field"><span>담당자</span><input id="runAssigneeInput" class="form-input" maxlength="100"></label>
+    <div class="plan-form-actions">
+      <button type="button" class="btn btn-sm" id="newRunCancelButton">취소</button>
+      <button type="button" class="btn btn-sm btn-pri" id="newRunCreateButton">생성</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5. 연결 설정 ══ -->
 <div class="app-view" id="view-settings">
   <div class="view-hd">
     <div class="view-eyebrow">Settings</div>

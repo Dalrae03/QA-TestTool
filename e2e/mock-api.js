@@ -7,6 +7,11 @@ let nextSuiteId = 1;
 let nextServerEnvironmentId = 1;
 let nextConfigurationId = 1;
 let nextDefectId = 1;
+let nextFolderId = 1;
+let nextExecutionId = 1;
+let nextExecutionItemId = 1;
+const folders = [];
+const executions = [];
 const testCases = [];
 const areaTags = [];
 const testPlans = [];
@@ -106,6 +111,46 @@ function normalizeConfiguration(configuration) {
     serverEnvironment: configuration.serverEnvironmentId
       ? serverEnvironments.find((environment) => environment.id === configuration.serverEnvironmentId) || null
       : null
+  };
+}
+
+function normalizeExecution(exec, includeItems) {
+  const items = exec.items;
+  const total = items.length;
+  const countBy = (s) => items.filter((it) => it.status === s).length;
+  const untested = countBy("UNTESTED");
+  const executed = total - untested;
+  return {
+    id: exec.id,
+    name: exec.name,
+    description: exec.description ?? null,
+    testPlanId: exec.testPlanId ?? null,
+    testSuiteId: exec.testSuiteId ?? null,
+    suiteName: exec.suiteName ?? null,
+    status: exec.status,
+    assignee: exec.assignee ?? null,
+    total,
+    untested,
+    passed: countBy("PASSED"),
+    failed: countBy("FAILED"),
+    blocked: countBy("BLOCKED"),
+    retest: countBy("RETEST"),
+    progressPct: total === 0 ? 0 : Math.round((executed * 100) / total),
+    items: includeItems ? items.map((it) => ({ ...it })) : null,
+    createdAt: exec.createdAt,
+    updatedAt: exec.updatedAt,
+    completedAt: exec.completedAt ?? null
+  };
+}
+
+function normalizeFolder(folder) {
+  return {
+    id: folder.id,
+    name: folder.name,
+    parentId: folder.parentId ?? null,
+    children: folders.filter((f) => f.parentId === folder.id).map(normalizeFolder),
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt
   };
 }
 
@@ -510,6 +555,126 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "DELETE") {
       testSuites.splice(testSuites.indexOf(suite), 1);
+      noContent(res);
+      return;
+    }
+  }
+
+  if (url.pathname === "/api/folders") {
+    if (req.method === "GET") {
+      json(res, 200, folders.filter((f) => f.parentId == null).map(normalizeFolder));
+      return;
+    }
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      const now = new Date().toISOString();
+      const folder = { id: nextFolderId++, name: body.name, parentId: body.parentId ?? null, createdAt: now, updatedAt: now };
+      folders.push(folder);
+      json(res, 201, normalizeFolder(folder));
+      return;
+    }
+  }
+
+  const folderMatch = url.pathname.match(/^\/api\/folders\/(\d+)$/);
+  if (folderMatch) {
+    const folderId = Number(folderMatch[1]);
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) { json(res, 404, { message: `TestFolder not found. id=${folderId}` }); return; }
+    if (req.method === "GET") { json(res, 200, normalizeFolder(folder)); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      Object.assign(folder, { name: body.name, parentId: body.parentId ?? null, updatedAt: new Date().toISOString() });
+      json(res, 200, normalizeFolder(folder));
+      return;
+    }
+    if (req.method === "DELETE") {
+      folders.splice(folders.indexOf(folder), 1);
+      for (const testCase of testCases) if (testCase.folderId === folderId) testCase.folderId = null;
+      noContent(res);
+      return;
+    }
+  }
+
+  const tcFolderMatch = url.pathname.match(/^\/api\/testcases\/(\d+)\/folder$/);
+  if (tcFolderMatch && req.method === "PATCH") {
+    const testCase = testCases.find((item) => item.id === Number(tcFolderMatch[1]));
+    if (!testCase) { json(res, 404, { message: `TestCase not found. id=${tcFolderMatch[1]}` }); return; }
+    const body = await readBody(req);
+    testCase.folderId = body.folderId ?? null;
+    json(res, 200, normalizeTestCase(testCase));
+    return;
+  }
+
+  if (url.pathname === "/api/test-runs") {
+    if (req.method === "GET") {
+      json(res, 200, [...executions].sort((a, b) => b.id - a.id).map((exec) => normalizeExecution(exec, false)));
+      return;
+    }
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      const suite = testSuites.find((s) => s.id === Number(body.suiteId));
+      if (!suite) { json(res, 404, { message: `TestSuite not found. id=${body.suiteId}` }); return; }
+      if (!suite.testCaseIds || suite.testCaseIds.length === 0) {
+        json(res, 400, { message: "테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다." });
+        return;
+      }
+      const now = new Date().toISOString();
+      const exec = {
+        id: nextExecutionId++,
+        name: body.name && body.name.trim() ? body.name.trim() : `${suite.name} — ${now.slice(0, 10)}`,
+        description: body.description ?? null,
+        testPlanId: suite.testPlanId,
+        testSuiteId: suite.id,
+        suiteName: suite.name,
+        status: "IN_PROGRESS",
+        assignee: body.assignee ?? null,
+        items: suite.testCaseIds.map((tcId) => {
+          const tc = testCases.find((c) => c.id === tcId);
+          return { id: nextExecutionItemId++, testCaseId: tcId, caseTitle: tc ? tc.title : `TC-${tcId}`, status: "UNTESTED", comment: null, executedAt: null };
+        }),
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null
+      };
+      executions.push(exec);
+      json(res, 201, normalizeExecution(exec, true));
+      return;
+    }
+  }
+
+  const execItemMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)\/items\/(\d+)$/);
+  if (execItemMatch && req.method === "PATCH") {
+    const exec = executions.find((e) => e.id === Number(execItemMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execItemMatch[1]}` }); return; }
+    if (exec.status === "COMPLETED") {
+      json(res, 400, { message: "완료된 테스트런은 다시 열기 전까지 수정할 수 없습니다." });
+      return;
+    }
+    const item = exec.items.find((it) => it.id === Number(execItemMatch[2]));
+    if (!item) { json(res, 404, { message: `ExecutionItem not found. id=${execItemMatch[2]}` }); return; }
+    const body = await readBody(req);
+    item.status = body.status;
+    item.comment = body.comment ?? null;
+    item.executedAt = body.status === "UNTESTED" ? null : new Date().toISOString();
+    exec.updatedAt = new Date().toISOString();
+    json(res, 200, normalizeExecution(exec, true));
+    return;
+  }
+
+  const execMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)$/);
+  if (execMatch) {
+    const exec = executions.find((e) => e.id === Number(execMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execMatch[1]}` }); return; }
+    if (req.method === "GET") { json(res, 200, normalizeExecution(exec, true)); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      Object.assign(exec, { name: body.name, description: body.description ?? null, status: body.status, assignee: body.assignee ?? null, updatedAt: new Date().toISOString() });
+      exec.completedAt = body.status === "COMPLETED" ? (exec.completedAt || new Date().toISOString()) : null;
+      json(res, 200, normalizeExecution(exec, true));
+      return;
+    }
+    if (req.method === "DELETE") {
+      executions.splice(executions.indexOf(exec), 1);
       noContent(res);
       return;
     }
