@@ -26,6 +26,7 @@ import com.tms.testcase.repository.AreaTagRepository;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testcase.repository.TestCaseSpecification;
 import com.tms.testcase.repository.TestFolderRepository;
+import com.tms.testrun.repository.TestRunRepository;
 import com.tms.testsuite.service.TestSuiteService;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
@@ -51,6 +52,7 @@ public class TestCaseService {
     private final DefectService defectService;
     private final AttachmentService attachmentService;
     private final TestFolderRepository testFolderRepository;
+    private final TestRunRepository testRunRepository;
 
     public TestCaseService(
             TestCaseRepository testCaseRepository,
@@ -60,7 +62,8 @@ public class TestCaseService {
             TestConfigurationRepository testConfigurationRepository,
             DefectService defectService,
             AttachmentService attachmentService,
-            TestFolderRepository testFolderRepository
+            TestFolderRepository testFolderRepository,
+            TestRunRepository testRunRepository
     ) {
         this.testCaseRepository = testCaseRepository;
         this.areaTagRepository = areaTagRepository;
@@ -70,6 +73,7 @@ public class TestCaseService {
         this.defectService = defectService;
         this.attachmentService = attachmentService;
         this.testFolderRepository = testFolderRepository;
+        this.testRunRepository = testRunRepository;
     }
 
     public List<TestCaseResponse> getAllTestCases(
@@ -195,6 +199,7 @@ public class TestCaseService {
     @Transactional
     public void deleteTestCase(Long id) {
         TestCase testCase = findById(id);
+        testRunRepository.deleteAllByTestCaseId(id);
         testSuiteService.removeTestCaseFromAllSuites(id);
         attachmentService.deleteAllByEntity(AttachmentEntityType.TEST_CASE, id);
         testCaseRepository.delete(testCase);

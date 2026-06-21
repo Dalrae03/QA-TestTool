@@ -457,6 +457,7 @@ table.ctbl tr:not(.tc-row-dragging):hover td { background: #f9f9f7; }
 /* ════════════════════════════
    연결 설정
 ════════════════════════════ */
+.set-body { flex: 1; overflow-y: auto; padding-bottom: 24px; }
 .set-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 20px 24px; }
 .set-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 20px; box-shadow: var(--shadow); }
 .set-card h3 { font-family: var(--font-title); font-size: 14px; font-weight: 700; margin-bottom: 4px; }
@@ -473,5 +474,8 @@ table.ctbl tr:not(.tc-row-dragging):hover td { background: #f9f9f7; }
 .configuration-list-item.active { background: var(--accent-glow); border-color: rgba(99,102,241,.3); }
 .configuration-form { display: flex; flex-direction: column; gap: 12px; }
 .configuration-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+.area-tag-manage-list { display: flex; flex-direction: column; gap: 6px; }
+.area-tag-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-md); }
+.area-tag-name { font-size: 13px; color: var(--text-primary); }
 .configuration-active { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
 .configuration-active input { accent-color: var(--accent); }

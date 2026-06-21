@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TestRunRepository extends JpaRepository<TestRun, Long> {
     List<TestRun> findByTestCaseIdOrderByExecutedAtDesc(Long testCaseId);
+    void deleteAllByTestCaseId(Long testCaseId);
 }
