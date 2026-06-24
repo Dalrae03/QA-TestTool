@@ -7,6 +7,14 @@ let nextSuiteId = 1;
 let nextServerEnvironmentId = 1;
 let nextConfigurationId = 1;
 let nextDefectId = 1;
+let nextFolderId = 1;
+let nextExecutionId = 1;
+let nextExecutionItemId = 1;
+let nextUserId = 1;
+let nextAuditLogId = 1;
+let nextTestCaseVersionId = 1;
+const folders = [];
+const executions = [];
 const testCases = [];
 const areaTags = [];
 const testPlans = [];
@@ -14,6 +22,9 @@ const testSuites = [];
 const serverEnvironments = [];
 const testConfigurations = [];
 const defects = [];
+const users = [];
+const auditLogs = [];
+const testCaseVersions = [];
 const testRunsByTestCaseId = new Map();
 
 function json(res, status, body) {
@@ -58,6 +69,73 @@ function normalizeTestCase(testCase) {
       : null,
     areaTags: testCase.areaTags.map((tag) => ({ id: tag.id, name: tag.name }))
   };
+}
+
+function recordAudit(entityId, action, fieldName, oldValue, newValue) {
+  auditLogs.push({
+    id: nextAuditLogId++,
+    entityType: "TEST_CASE",
+    entityId,
+    action,
+    fieldName,
+    oldValue: oldValue == null ? null : String(oldValue),
+    newValue: newValue == null ? null : String(newValue),
+    summary: action,
+    actor: "system",
+    createdAt: new Date().toISOString()
+  });
+}
+
+function recordAuditIfChanged(entityId, action, fieldName, oldValue, newValue) {
+  const oldText = oldValue == null ? null : String(oldValue);
+  const newText = newValue == null ? null : String(newValue);
+  if (oldText !== newText) recordAudit(entityId, action, fieldName, oldText, newText);
+}
+
+function recordVersionSnapshot(testCase, changeSummary) {
+  const currentVersions = testCaseVersions.filter((version) => version.testCaseId === testCase.id);
+  const versionNumber = currentVersions.length === 0
+    ? 1
+    : Math.max(...currentVersions.map((version) => version.versionNumber)) + 1;
+  const folder = testCase.folderId ? folders.find((item) => item.id === testCase.folderId) : null;
+  const serverEnvironment = testCase.serverEnvironmentId
+    ? serverEnvironments.find((item) => item.id === testCase.serverEnvironmentId)
+    : null;
+  const testConfiguration = testCase.testConfigurationId
+    ? testConfigurations.find((item) => item.id === testCase.testConfigurationId)
+    : null;
+  const snapshot = {
+    id: nextTestCaseVersionId++,
+    testCaseId: testCase.id,
+    versionNumber,
+    label: testCase.version || `v${versionNumber}`,
+    changeSummary,
+    type: testCase.type,
+    priority: testCase.priority,
+    status: testCase.status,
+    title: testCase.title,
+    version: testCase.version ?? null,
+    description: testCase.description,
+    precondition: testCase.precondition,
+    steps: testCase.steps,
+    notes: testCase.notes ?? null,
+    os: testCase.os ?? null,
+    browser: testCase.browser ?? null,
+    device: testCase.device ?? null,
+    assignee: testCase.assignee ?? null,
+    folderId: testCase.folderId ?? null,
+    folderName: folder?.name ?? null,
+    serverEnvironmentId: testCase.serverEnvironmentId ?? null,
+    serverEnvironmentName: serverEnvironment?.name ?? null,
+    testConfigurationId: testCase.testConfigurationId ?? null,
+    testConfigurationName: testConfiguration?.name ?? null,
+    areaTagIds: testCase.areaTags.map((tag) => tag.id).join(","),
+    areaTagNames: testCase.areaTags.map((tag) => tag.name).join(", "),
+    createdAt: new Date().toISOString()
+  };
+  testCaseVersions.push(snapshot);
+  recordAudit(testCase.id, "VERSION_CREATED", "version", null, snapshot.label);
+  return snapshot;
 }
 
 function applyFilters(items, url) {
@@ -109,6 +187,46 @@ function normalizeConfiguration(configuration) {
   };
 }
 
+function normalizeExecution(exec, includeItems) {
+  const items = exec.items;
+  const total = items.length;
+  const countBy = (s) => items.filter((it) => it.status === s).length;
+  const untested = countBy("UNTESTED");
+  const executed = total - untested;
+  return {
+    id: exec.id,
+    name: exec.name,
+    description: exec.description ?? null,
+    testPlanId: exec.testPlanId ?? null,
+    testSuiteId: exec.testSuiteId ?? null,
+    suiteName: exec.suiteName ?? null,
+    status: exec.status,
+    assignee: exec.assignee ?? null,
+    total,
+    untested,
+    passed: countBy("PASSED"),
+    failed: countBy("FAILED"),
+    blocked: countBy("BLOCKED"),
+    retest: countBy("RETEST"),
+    progressPct: total === 0 ? 0 : Math.round((executed * 100) / total),
+    items: includeItems ? items.map((it) => ({ ...it })) : null,
+    createdAt: exec.createdAt,
+    updatedAt: exec.updatedAt,
+    completedAt: exec.completedAt ?? null
+  };
+}
+
+function normalizeFolder(folder) {
+  return {
+    id: folder.id,
+    name: folder.name,
+    parentId: folder.parentId ?? null,
+    children: folders.filter((f) => f.parentId === folder.id).map(normalizeFolder),
+    createdAt: folder.createdAt,
+    updatedAt: folder.updatedAt
+  };
+}
+
 function normalizeSuite(suite) {
   return {
     id: suite.id,
@@ -127,6 +245,63 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/area-tags") {
     json(res, 200, areaTags);
     return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/users") {
+    json(res, 200, [...users].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/users") {
+    const body = await readBody(req);
+    const email = body.email ? String(body.email).trim().toLowerCase() : null;
+    if (email && users.some((user) => user.email && user.email.toLowerCase() === email)) {
+      json(res, 409, { message: `이미 등록된 이메일입니다: ${email}` });
+      return;
+    }
+    const now = new Date().toISOString();
+    const user = {
+      id: nextUserId++,
+      name: String(body.name || "").trim(),
+      email,
+      role: body.role,
+      active: body.active !== false,
+      createdAt: now,
+      updatedAt: now
+    };
+    users.push(user);
+    json(res, 201, user);
+    return;
+  }
+
+  if (/^\/api\/users\/\d+$/.test(url.pathname)) {
+    const id = Number(url.pathname.split("/").pop());
+    const user = users.find((item) => item.id === id);
+    if (!user) { json(res, 404, { message: `User not found. id=${id}` }); return; }
+    if (req.method === "GET") { json(res, 200, user); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      const email = body.email ? String(body.email).trim().toLowerCase() : null;
+      if (email && users.some((item) => item.id !== id && item.email && item.email.toLowerCase() === email)) {
+        json(res, 409, { message: `이미 등록된 이메일입니다: ${email}` });
+        return;
+      }
+      Object.assign(user, {
+        name: String(body.name || "").trim(),
+        email,
+        role: body.role,
+        active: body.active !== false,
+        updatedAt: new Date().toISOString()
+      });
+      json(res, 200, user);
+      return;
+    }
+    if (req.method === "DELETE") {
+      user.active = false;
+      user.updatedAt = new Date().toISOString();
+      noContent(res);
+      return;
+    }
   }
 
   if (req.method === "POST" && url.pathname === "/api/area-tags") {
@@ -183,10 +358,71 @@ const server = http.createServer(async (req, res) => {
       device: body.device ?? null,
       areaTags: resolveAreaTags(body.areaTagIds),
       serverEnvironmentId: body.serverEnvironmentId ?? null,
-      testConfigurationId: body.testConfigurationId ?? null
+      testConfigurationId: body.testConfigurationId ?? null,
+      assignee: body.assignee ?? null,
+      version: body.version ?? null,
+      folderId: body.folderId ?? null
     };
     testCases.push(testCase);
+    recordAudit(testCase.id, "CREATED", "testCase", null, testCase.title);
+    recordVersionSnapshot(testCase, "최초 생성");
     json(res, 201, normalizeTestCase(testCase));
+    return;
+  }
+
+  const auditMatch = url.pathname.match(/^\/api\/testcases\/(\d+)\/audit-logs$/);
+  if (req.method === "GET" && auditMatch) {
+    const testCaseId = Number(auditMatch[1]);
+    json(res, 200, auditLogs
+      .filter((log) => log.entityType === "TEST_CASE" && log.entityId === testCaseId)
+      .sort((a, b) => b.id - a.id));
+    return;
+  }
+
+  const versionMatch = url.pathname.match(/^\/api\/testcases\/(\d+)\/versions$/);
+  if (req.method === "GET" && versionMatch) {
+    const testCaseId = Number(versionMatch[1]);
+    json(res, 200, testCaseVersions
+      .filter((version) => version.testCaseId === testCaseId)
+      .sort((a, b) => b.versionNumber - a.versionNumber));
+    return;
+  }
+
+  const restoreVersionMatch = url.pathname.match(/^\/api\/testcases\/(\d+)\/versions\/(\d+)\/restore$/);
+  if (req.method === "POST" && restoreVersionMatch) {
+    const testCaseId = Number(restoreVersionMatch[1]);
+    const versionId = Number(restoreVersionMatch[2]);
+    const testCase = testCases.find((item) => item.id === testCaseId);
+    if (!testCase) { json(res, 404, { message: `TestCase not found. id=${testCaseId}` }); return; }
+    const snapshot = testCaseVersions.find((version) => version.id === versionId && version.testCaseId === testCaseId);
+    if (!snapshot) { json(res, 404, { message: `TestCaseVersion not found. id=${versionId}` }); return; }
+    const beforeTitle = testCase.title;
+    Object.assign(testCase, {
+      updatedAt: new Date().toISOString(),
+      type: snapshot.type,
+      priority: snapshot.priority,
+      status: snapshot.status,
+      title: snapshot.title,
+      version: snapshot.version ?? null,
+      description: snapshot.description,
+      precondition: snapshot.precondition,
+      steps: snapshot.steps,
+      notes: snapshot.notes ?? null,
+      os: snapshot.os ?? null,
+      browser: snapshot.browser ?? null,
+      device: snapshot.device ?? null,
+      assignee: snapshot.assignee ?? null,
+      folderId: snapshot.folderId ?? null,
+      serverEnvironmentId: snapshot.serverEnvironmentId ?? null,
+      testConfigurationId: snapshot.testConfigurationId ?? null,
+      areaTags: snapshot.areaTagIds
+        ? snapshot.areaTagIds.split(",").map((id) => areaTags.find((tag) => tag.id === Number(id))).filter(Boolean)
+        : []
+    });
+    recordAuditIfChanged(testCaseId, "UPDATED", "title", beforeTitle, testCase.title);
+    recordAudit(testCaseId, "VERSION_RESTORED", "version", null, snapshot.label);
+    recordVersionSnapshot(testCase, `버전 복원: ${snapshot.label}`);
+    json(res, 200, normalizeTestCase(testCase));
     return;
   }
 
@@ -209,6 +445,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = await readBody(req);
+    const before = { ...testCase, areaTags: [...testCase.areaTags] };
     Object.assign(testCase, {
       updatedAt: new Date().toISOString(),
       type: body.type,
@@ -224,8 +461,19 @@ const server = http.createServer(async (req, res) => {
       device: body.device ?? null,
       areaTags: resolveAreaTags(body.areaTagIds),
       serverEnvironmentId: body.serverEnvironmentId ?? null,
-      testConfigurationId: body.testConfigurationId ?? null
+      testConfigurationId: body.testConfigurationId ?? null,
+      assignee: body.assignee ?? null,
+      version: body.version ?? null,
+      folderId: body.folderId ?? null
     });
+    recordAuditIfChanged(id, "UPDATED", "title", before.title, testCase.title);
+    recordAuditIfChanged(id, "UPDATED", "priority", before.priority, testCase.priority);
+    recordAuditIfChanged(id, "STATUS_CHANGED", "status", before.status, testCase.status);
+    recordAuditIfChanged(id, "UPDATED", "description", before.description, testCase.description);
+    recordAuditIfChanged(id, "UPDATED", "assignee", before.assignee, testCase.assignee);
+    recordAuditIfChanged(id, "UPDATED", "version", before.version, testCase.version);
+    recordAuditIfChanged(id, "MOVED", "folder", before.folderId, testCase.folderId);
+    recordVersionSnapshot(testCase, "테스트케이스 수정");
     json(res, 200, normalizeTestCase(testCase));
     return;
   }
@@ -237,7 +485,11 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, { message: `TestCase not found. id=${id}` });
       return;
     }
+    recordAudit(id, "DELETED", "testCase", testCases[index].title, null);
     testCases.splice(index, 1);
+    for (let i = testCaseVersions.length - 1; i >= 0; i -= 1) {
+      if (testCaseVersions[i].testCaseId === id) testCaseVersions.splice(i, 1);
+    }
     testRunsByTestCaseId.delete(id);
     testSuites.forEach((suite) => { suite.testCaseIds = suite.testCaseIds.filter((caseId) => caseId !== id); });
     noContent(res);
@@ -252,7 +504,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = await readBody(req);
+    const before = testCase.status;
     testCase.status = body.status;
+    recordAuditIfChanged(testCase.id, "STATUS_CHANGED", "status", before, testCase.status);
+    recordVersionSnapshot(testCase, "상태 변경");
     json(res, 200, normalizeTestCase(testCase));
     return;
   }
@@ -510,6 +765,129 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "DELETE") {
       testSuites.splice(testSuites.indexOf(suite), 1);
+      noContent(res);
+      return;
+    }
+  }
+
+  if (url.pathname === "/api/folders") {
+    if (req.method === "GET") {
+      json(res, 200, folders.filter((f) => f.parentId == null).map(normalizeFolder));
+      return;
+    }
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      const now = new Date().toISOString();
+      const folder = { id: nextFolderId++, name: body.name, parentId: body.parentId ?? null, createdAt: now, updatedAt: now };
+      folders.push(folder);
+      json(res, 201, normalizeFolder(folder));
+      return;
+    }
+  }
+
+  const folderMatch = url.pathname.match(/^\/api\/folders\/(\d+)$/);
+  if (folderMatch) {
+    const folderId = Number(folderMatch[1]);
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) { json(res, 404, { message: `TestFolder not found. id=${folderId}` }); return; }
+    if (req.method === "GET") { json(res, 200, normalizeFolder(folder)); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      Object.assign(folder, { name: body.name, parentId: body.parentId ?? null, updatedAt: new Date().toISOString() });
+      json(res, 200, normalizeFolder(folder));
+      return;
+    }
+    if (req.method === "DELETE") {
+      folders.splice(folders.indexOf(folder), 1);
+      for (const testCase of testCases) if (testCase.folderId === folderId) testCase.folderId = null;
+      noContent(res);
+      return;
+    }
+  }
+
+  const tcFolderMatch = url.pathname.match(/^\/api\/testcases\/(\d+)\/folder$/);
+  if (tcFolderMatch && req.method === "PATCH") {
+    const testCase = testCases.find((item) => item.id === Number(tcFolderMatch[1]));
+    if (!testCase) { json(res, 404, { message: `TestCase not found. id=${tcFolderMatch[1]}` }); return; }
+    const body = await readBody(req);
+    const before = testCase.folderId ?? null;
+    testCase.folderId = body.folderId ?? null;
+    recordAuditIfChanged(testCase.id, "MOVED", "folder", before, testCase.folderId);
+    recordVersionSnapshot(testCase, "폴더 변경");
+    json(res, 200, normalizeTestCase(testCase));
+    return;
+  }
+
+  if (url.pathname === "/api/test-runs") {
+    if (req.method === "GET") {
+      json(res, 200, [...executions].sort((a, b) => b.id - a.id).map((exec) => normalizeExecution(exec, false)));
+      return;
+    }
+    if (req.method === "POST") {
+      const body = await readBody(req);
+      const suite = testSuites.find((s) => s.id === Number(body.suiteId));
+      if (!suite) { json(res, 404, { message: `TestSuite not found. id=${body.suiteId}` }); return; }
+      if (!suite.testCaseIds || suite.testCaseIds.length === 0) {
+        json(res, 400, { message: "테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다." });
+        return;
+      }
+      const now = new Date().toISOString();
+      const exec = {
+        id: nextExecutionId++,
+        name: body.name && body.name.trim() ? body.name.trim() : `${suite.name} — ${now.slice(0, 10)}`,
+        description: body.description ?? null,
+        testPlanId: suite.testPlanId,
+        testSuiteId: suite.id,
+        suiteName: suite.name,
+        status: "IN_PROGRESS",
+        assignee: body.assignee ?? null,
+        items: suite.testCaseIds.map((tcId) => {
+          const tc = testCases.find((c) => c.id === tcId);
+          return { id: nextExecutionItemId++, testCaseId: tcId, caseTitle: tc ? tc.title : `TC-${tcId}`, status: "UNTESTED", comment: null, executedAt: null };
+        }),
+        createdAt: now,
+        updatedAt: now,
+        completedAt: null
+      };
+      executions.push(exec);
+      json(res, 201, normalizeExecution(exec, true));
+      return;
+    }
+  }
+
+  const execItemMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)\/items\/(\d+)$/);
+  if (execItemMatch && req.method === "PATCH") {
+    const exec = executions.find((e) => e.id === Number(execItemMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execItemMatch[1]}` }); return; }
+    if (exec.status === "COMPLETED") {
+      json(res, 400, { message: "완료된 테스트런은 다시 열기 전까지 수정할 수 없습니다." });
+      return;
+    }
+    const item = exec.items.find((it) => it.id === Number(execItemMatch[2]));
+    if (!item) { json(res, 404, { message: `ExecutionItem not found. id=${execItemMatch[2]}` }); return; }
+    const body = await readBody(req);
+    item.status = body.status;
+    item.comment = body.comment ?? null;
+    item.executedAt = body.status === "UNTESTED" ? null : new Date().toISOString();
+    exec.updatedAt = new Date().toISOString();
+    json(res, 200, normalizeExecution(exec, true));
+    return;
+  }
+
+  const execMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)$/);
+  if (execMatch) {
+    const exec = executions.find((e) => e.id === Number(execMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execMatch[1]}` }); return; }
+    if (req.method === "GET") { json(res, 200, normalizeExecution(exec, true)); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      Object.assign(exec, { name: body.name, description: body.description ?? null, status: body.status, assignee: body.assignee ?? null, updatedAt: new Date().toISOString() });
+      exec.completedAt = body.status === "COMPLETED" ? (exec.completedAt || new Date().toISOString()) : null;
+      json(res, 200, normalizeExecution(exec, true));
+      return;
+    }
+    if (req.method === "DELETE") {
+      executions.splice(executions.indexOf(exec), 1);
       noContent(res);
       return;
     }

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tms.audit.repository.AuditLogRepository;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseRequest;
 import com.tms.testcase.dto.UpdateTestCaseStatusRequest;
@@ -23,6 +24,7 @@ import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.repository.AreaTagRepository;
 import com.tms.testcase.repository.TestCaseRepository;
+import com.tms.testcase.repository.TestCaseVersionRepository;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -49,8 +51,16 @@ class TestCaseControllerIntegrationTest {
     @Autowired
     private AreaTagRepository areaTagRepository;
 
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
+    @Autowired
+    private TestCaseVersionRepository testCaseVersionRepository;
+
     @AfterEach
     void tearDown() {
+        auditLogRepository.deleteAll();
+        testCaseVersionRepository.deleteAll();
         testCaseRepository.deleteAll();
         areaTagRepository.deleteAll();
     }
@@ -238,5 +248,139 @@ class TestCaseControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("존재하지 않는 태그 ID가 포함되어 있습니다: [9999]"));
+    }
+
+    @Test
+    void shouldRecordAuditLogsForTestCaseChanges() throws Exception {
+        CreateTestCaseRequest createRequest = new CreateTestCaseRequest(
+                TestCaseType.FUNCTIONAL,
+                TestCasePriority.HIGH,
+                TestCaseStatus.DRAFT,
+                "Audit target",
+                "Initial description",
+                "Initial precondition",
+                "1. Initial step",
+                null,
+                TestCaseOs.MAC,
+                TestCaseBrowser.CHROME,
+                TestCaseDevice.DESKTOP,
+                List.of()
+        );
+
+        MvcResult createResult = mockMvc.perform(post("/api/testcases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long id = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        UpdateTestCaseRequest updateRequest = new UpdateTestCaseRequest(
+                TestCaseType.FUNCTIONAL,
+                TestCasePriority.LOW,
+                TestCaseStatus.READY,
+                "Audit target updated",
+                "Initial description",
+                "Initial precondition",
+                "1. Initial step",
+                "Changed note",
+                TestCaseOs.MAC,
+                TestCaseBrowser.CHROME,
+                TestCaseDevice.DESKTOP,
+                List.of()
+        );
+
+        mockMvc.perform(put("/api/testcases/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/testcases/{id}/status", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UpdateTestCaseStatusRequest(TestCaseStatus.COMPLETED))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/testcases/{id}/audit-logs", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.action == 'STATUS_CHANGED' && @.fieldName == 'status' && @.oldValue == 'READY' && @.newValue == 'COMPLETED')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.action == 'CREATED')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.action == 'VERSION_CREATED')]", hasSize(3)))
+                .andExpect(jsonPath("$[?(@.fieldName == 'title')]", hasSize(1)))
+                .andExpect(jsonPath("$[?(@.fieldName == 'priority')]", hasSize(1)));
+    }
+
+    @Test
+    void shouldCreateAndRestoreTestCaseVersions() throws Exception {
+        CreateTestCaseRequest createRequest = new CreateTestCaseRequest(
+                TestCaseType.FUNCTIONAL,
+                TestCasePriority.HIGH,
+                TestCaseStatus.DRAFT,
+                "Versioned login test",
+                "Initial description",
+                "Initial precondition",
+                "1. Initial step",
+                "Initial note",
+                TestCaseOs.MAC,
+                TestCaseBrowser.CHROME,
+                TestCaseDevice.DESKTOP,
+                List.of()
+        );
+
+        MvcResult createResult = mockMvc.perform(post("/api/testcases")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long id = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        UpdateTestCaseRequest updateRequest = new UpdateTestCaseRequest(
+                TestCaseType.FUNCTIONAL,
+                TestCasePriority.LOW,
+                TestCaseStatus.READY,
+                "Versioned login test updated",
+                "Updated description",
+                "Updated precondition",
+                "1. Updated step",
+                "Updated note",
+                TestCaseOs.WINDOWS,
+                TestCaseBrowser.EDGE,
+                TestCaseDevice.DESKTOP,
+                List.of()
+        );
+
+        mockMvc.perform(put("/api/testcases/{id}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(updateRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Versioned login test updated"));
+
+        MvcResult versionsResult = mockMvc.perform(get("/api/testcases/{id}/versions", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[0].versionNumber").value(2))
+                .andExpect(jsonPath("$[0].title").value("Versioned login test updated"))
+                .andExpect(jsonPath("$[1].versionNumber").value(1))
+                .andExpect(jsonPath("$[1].title").value("Versioned login test"))
+                .andReturn();
+
+        Long firstVersionId = objectMapper.readTree(versionsResult.getResponse().getContentAsString()).get(1).get("id").asLong();
+
+        mockMvc.perform(post("/api/testcases/{id}/versions/{versionId}/restore", id, firstVersionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Versioned login test"))
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.description").value("Initial description"));
+
+        mockMvc.perform(get("/api/testcases/{id}/versions", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[0].changeSummary").value("버전 복원: v1"))
+                .andExpect(jsonPath("$[0].title").value("Versioned login test"));
+
+        mockMvc.perform(get("/api/testcases/{id}/audit-logs", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.action == 'VERSION_RESTORED')]", hasSize(1)));
     }
 }

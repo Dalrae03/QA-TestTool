@@ -5,6 +5,13 @@ const SUITE_FOLDER_KEY        = "tms.suiteFolders";
 const SUITE_FOLDER_ASSIGN_KEY = "tms.suiteFolderAssignments";
 const FOLDER_COLLAPSED_KEY    = "tms.folderCollapsed";
 const FOLDER_MIGRATED_KEY     = "tms.foldersMigrated";
+const USER_ROLE_LABELS = {
+  ADMIN: "관리자",
+  QA_LEAD: "QA 리드",
+  QA: "QA",
+  DEVELOPER: "개발자",
+  VIEWER: "조회자"
+};
 
 // ── 상태 ─────────────────────────────────────────────────────────
 const state = {
@@ -17,11 +24,15 @@ const state = {
   testSuites: [],
   selectedPlanId: null,
   selectedSuiteId: null,
+  executions: [],            // 테스트런(실행 사이클) 목록
+  selectedExecutionId: null,
   areaTags: [],
   allDefects: [],
   serverEnvironments: [],
   testConfigurations: [],
   selectedConfigurationId: null,
+  users: [],
+  selectedUserId: null,
   selectedTagIds: [],
   folders: [],              // { id, name, parentId, collapsed }
   folderAssignments: {},    // { "tcId": folderId | null }
@@ -64,6 +75,8 @@ const elements = {
   versionPill:       document.getElementById("version-pill"),
   testCaseId:        document.getElementById("testCaseId"),
   tcFolder:          document.getElementById("tcFolder"),
+  assignee:          document.getElementById("assignee"),
+  tcVersion:         document.getElementById("tcVersion"),
   type:              document.getElementById("type"),
   priority:          document.getElementById("priority"),
   tcStatus:          document.getElementById("tcStatus"),
@@ -99,7 +112,13 @@ const elements = {
   detailEmpty:       document.getElementById("detailEmpty"),
   detailEditor:      document.getElementById("detailEditor"),
   runPanelCaseId:    document.getElementById("runPanelCaseId"),
-  runPanelCaseTitle: document.getElementById("runPanelCaseTitle")
+  runPanelCaseTitle: document.getElementById("runPanelCaseTitle"),
+  auditSection:      document.getElementById("auditSection"),
+  auditList:         document.getElementById("auditList"),
+  auditRefreshBtn:   document.getElementById("auditRefreshBtn"),
+  versionSection:    document.getElementById("versionSection"),
+  versionList:       document.getElementById("versionList"),
+  versionRefreshBtn: document.getElementById("versionRefreshBtn")
 };
 
 const requiredFieldConfigs = [
@@ -118,13 +137,14 @@ function switchView(v) {
   document.querySelectorAll(".app-view").forEach(el => el.classList.remove("active"));
   const el = document.getElementById("view-" + v);
   if (el) el.classList.add("active");
-  const map = { dashboard: "navDash", testcases: "navTC", plans: "navPlans", settings: "navSet" };
+  const map = { dashboard: "navDash", testcases: "navTC", plans: "navPlans", runs: "navRuns", settings: "navSet" };
   document.querySelectorAll(".nav-tab").forEach(b => b.classList.remove("active"));
   const t = document.getElementById(map[v]);
   if (t) t.classList.add("active");
   if (v === "dashboard") renderDashboard();
   if (v === "plans") loadTestPlans();
-  if (v === "settings") { loadTestConfigurations(); loadAreaTags(); }
+  if (v === "runs") loadExecutions();
+  if (v === "settings") { loadTestConfigurations(); loadUsers(); loadAreaTags(); }
 }
 
 function switchTcTab(t) {
@@ -192,8 +212,20 @@ function escapeHtml(v) {
 function formatDateTime(v) {
   return new Date(v).toLocaleString("ko-KR", { year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit" });
 }
+function normalizeApiBaseUrl(rawValue, fallback = state.apiBaseUrl) {
+  let value = String(rawValue ?? "").trim();
+  if (!value) value = fallback;
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `http://${value}`;
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error("백엔드 주소는 http 또는 https로 시작해야 합니다.");
+  }
+  url.hash = "";
+  url.search = "";
+  return url.href.replace(/\/$/, "");
+}
 function getApiBaseUrl() {
-  return (elements.apiBaseUrl ? elements.apiBaseUrl.value.trim().replace(/\/$/, "") : "") || state.apiBaseUrl;
+  return normalizeApiBaseUrl(elements.apiBaseUrl?.value, state.apiBaseUrl);
 }
 function updateStatus(msg) {
   if (!elements.listState) return;
@@ -202,10 +234,17 @@ function updateStatus(msg) {
 }
 function updateRunStatus(msg) { if (elements.runState) elements.runState.textContent = msg; }
 function _toast(msg, isError = false) {
+  let container = document.getElementById("toastContainer");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.style.cssText = "position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none";
+    document.body.appendChild(container);
+  }
   const el = document.createElement("div");
-  el.style.cssText = `position:fixed;top:16px;left:50%;transform:translateX(-50%);background:${isError ? "#dc2626" : "var(--accent)"};color:#fff;padding:8px 20px;border-radius:8px;font-size:12px;font-weight:500;z-index:9999;box-shadow:var(--shadow-md);pointer-events:none;max-width:400px;text-align:center`;
+  el.style.cssText = `background:${isError ? "#dc2626" : "var(--accent)"};color:#fff;padding:8px 20px;border-radius:8px;font-size:12px;font-weight:500;box-shadow:var(--shadow-md);pointer-events:none;max-width:400px;text-align:center;animation:rise .2s ease both`;
   el.textContent = msg;
-  document.body.appendChild(el);
+  container.appendChild(el);
   setTimeout(() => el.remove(), 2500);
 }
 
@@ -858,6 +897,41 @@ function renderDashboard() {
   if (g("dashIssueCount")) g("dashIssueCount").textContent = `${issues.length}건`;
   const il = g("dashIssueList");
   if (il) { const pc = { HIGH:"b-hi",MEDIUM:"b-mid",LOW:"b-lo" }; il.innerHTML = issues.length===0 ? '<p style="font-size:12px;color:var(--text-muted)">검토가 필요한 이슈가 없습니다.</p>' : issues.map(tc=>`<div class="issue-item" onclick="switchView('testcases')"><div class="issue-item-title">${escapeHtml(tc.title)}</div><div class="issue-item-meta"><span class="badge b-review">검토 필요</span><span class="badge ${pc[tc.priority]||"b-mid"}">${escapeHtml(tc.priority??"MEDIUM")}</span></div></div>`).join(""); }
+  renderDashboardRuns();
+}
+
+// 대시보드 테스트런 현황 — 전체 런 집계 + 통과율
+async function renderDashboardRuns() {
+  const g = id => document.getElementById(id);
+  const body = g("dashRunBody"), empty = g("dashRunEmpty");
+  if (!body || !empty) return;
+  let runs = [];
+  try { runs = await request("/api/test-runs", { method: "GET" }); } catch (_e) { runs = []; }
+  if (runs.length === 0) { body.hidden = true; empty.hidden = false; return; }
+  empty.hidden = true; body.hidden = false;
+
+  const sum = runs.reduce((a, r) => ({
+    total:    a.total    + (r.total    || 0),
+    passed:   a.passed   + (r.passed   || 0),
+    failed:   a.failed   + (r.failed   || 0),
+    blocked:  a.blocked  + (r.blocked  || 0),
+    retest:   a.retest   + (r.retest   || 0),
+    untested: a.untested + (r.untested || 0)
+  }), { total: 0, passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 });
+  const executed = sum.total - sum.untested;
+  const passRate = executed ? Math.round((sum.passed / executed) * 100) : 0;
+
+  g("dashRunTotal").textContent  = runs.length;
+  g("dashRunActive").textContent = runs.filter(r => r.status === "IN_PROGRESS").length;
+  g("dashRunDone").textContent   = runs.filter(r => r.status === "COMPLETED").length;
+  g("dashRunPass").textContent   = `${passRate}%`;
+  renderSegmentBar(g("dashRunBar"), sum);
+  g("dashRunChips").innerHTML =
+    `<span class="suite-run-chip pass">통과 ${sum.passed}</span>` +
+    `<span class="suite-run-chip fail">실패 ${sum.failed}</span>` +
+    `<span class="suite-run-chip block">차단 ${sum.blocked}</span>` +
+    (sum.retest ? `<span class="suite-run-chip retest">재테스트 ${sum.retest}</span>` : "") +
+    `<span class="suite-run-prog" style="margin-left:4px">미실행 ${sum.untested}</span>`;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -878,6 +952,7 @@ function initStatusSelector() {
         const inAll = state.allTestCases.find(t => String(t.id) === String(tcId));
         if (inAll) inAll.status = btn.dataset.value;
         renderList();
+        await loadAuditLogs(tcId);
       } catch (_e) {}
     }
   });
@@ -907,7 +982,8 @@ function updateDetailHeader(tc) {
   const pMap = { HIGH:"b-hi",MEDIUM:"b-mid",LOW:"b-lo" };
   const pLbl = { HIGH:"높음",MEDIUM:"중간",LOW:"낮음" };
   const s = tc.status??"DRAFT"; const p = tc.priority??"MEDIUM";
-  elements.dtPills.innerHTML = `<span class="badge ${sMap[s]||"b-draft"}">${escapeHtml(sLbl[s]||s)}</span><span class="badge ${pMap[p]||"b-mid"}">${escapeHtml(pLbl[p]||p)}</span><span class="badge ${tc.type==="FUNCTIONAL"?"b-func":"b-nf"}">${escapeHtml(tc.type||"")}</span>${(tc.areaTags||[]).map(t=>`<span class="badge b-tag">${escapeHtml(t.name)}</span>`).join("")}`;
+  const assignee = tc.assignee ? `<span class="badge user-role-badge">담당 ${escapeHtml(tc.assignee)}</span>` : "";
+  elements.dtPills.innerHTML = `<span class="badge ${sMap[s]||"b-draft"}">${escapeHtml(sLbl[s]||s)}</span><span class="badge ${pMap[p]||"b-mid"}">${escapeHtml(pLbl[p]||p)}</span><span class="badge ${tc.type==="FUNCTIONAL"?"b-func":"b-nf"}">${escapeHtml(tc.type||"")}</span>${assignee}${(tc.areaTags||[]).map(t=>`<span class="badge b-tag">${escapeHtml(t.name)}</span>`).join("")}`;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1245,6 +1321,119 @@ async function deleteConfiguration() {
   } catch (error) { _toast(`Configuration 삭제 실패: ${error.message}`, true); }
 }
 
+async function loadUsers() {
+  try {
+    state.users = await request("/api/users", { method: "GET" });
+    renderUserList();
+    renderAssigneeSelects();
+  } catch (error) {
+    state.users = [];
+    renderUserList();
+    renderAssigneeSelects();
+    _toast(`사용자 조회 실패: ${error.message}`, true);
+  }
+}
+
+function renderAssigneeSelects() {
+  const selects = [elements.assignee, document.getElementById("runAssigneeInput")].filter(Boolean);
+  const activeUsers = state.users.filter(user => user.active);
+  selects.forEach(select => {
+    const previous = select.value;
+    select.innerHTML = '<option value="">담당자 없음</option>';
+    activeUsers.forEach(user => {
+      const option = document.createElement("option");
+      option.value = user.name;
+      option.textContent = `${user.name} · ${USER_ROLE_LABELS[user.role] || user.role}`;
+      select.appendChild(option);
+    });
+    if (previous && !activeUsers.some(user => user.name === previous)) {
+      const option = document.createElement("option");
+      option.value = previous;
+      option.textContent = `${previous} (비활성/외부)`;
+      select.appendChild(option);
+    }
+    select.value = previous || "";
+  });
+}
+
+function renderUserList() {
+  const list = document.getElementById("userList");
+  if (!list) return;
+  list.innerHTML = "";
+  if (state.users.length === 0) {
+    list.innerHTML = '<div class="plan-empty">등록된 사용자가 없습니다.</div>';
+    return;
+  }
+  state.users.forEach(user => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `configuration-list-item${user.id === state.selectedUserId ? " active" : ""}`;
+    button.innerHTML = `
+      <div class="plan-item-name">${escapeHtml(user.name)}</div>
+      <span class="user-email">${escapeHtml(user.email || "이메일 없음")}</span>
+      <div class="plan-item-meta">
+        <span class="badge ${user.active ? "b-done" : "b-tag"}">${user.active ? "ACTIVE" : "INACTIVE"}</span>
+        <span class="badge user-role-badge">${escapeHtml(USER_ROLE_LABELS[user.role] || user.role)}</span>
+      </div>`;
+    button.addEventListener("click", () => editUser(user));
+    list.appendChild(button);
+  });
+}
+
+function resetUserForm() {
+  state.selectedUserId = null;
+  document.getElementById("userForm").reset();
+  document.getElementById("userId").value = "";
+  document.getElementById("userRole").value = "QA";
+  document.getElementById("userActive").checked = true;
+  document.getElementById("deleteUserButton").disabled = true;
+  renderUserList();
+  document.getElementById("userName").focus();
+}
+
+function editUser(user) {
+  state.selectedUserId = user.id;
+  document.getElementById("userId").value = user.id;
+  document.getElementById("userName").value = user.name;
+  document.getElementById("userEmail").value = user.email || "";
+  document.getElementById("userRole").value = user.role;
+  document.getElementById("userActive").checked = user.active;
+  document.getElementById("deleteUserButton").disabled = !user.active;
+  renderUserList();
+}
+
+async function saveUser(event) {
+  event.preventDefault();
+  const id = document.getElementById("userId").value;
+  const payload = {
+    name: document.getElementById("userName").value.trim(),
+    email: document.getElementById("userEmail").value.trim() || null,
+    role: document.getElementById("userRole").value,
+    active: document.getElementById("userActive").checked
+  };
+  try {
+    const saved = await request(id ? `/api/users/${id}` : "/api/users", {
+      method: id ? "PUT" : "POST", body: JSON.stringify(payload)
+    });
+    state.selectedUserId = saved.id;
+    _toast(id ? "사용자를 수정했습니다." : "사용자를 생성했습니다.");
+    await loadUsers();
+    editUser(state.users.find(user => user.id === saved.id));
+  } catch (error) { _toast(`사용자 저장 실패: ${error.message}`, true); }
+}
+
+async function deactivateUser() {
+  if (!state.selectedUserId || !window.confirm("선택한 사용자를 비활성화할까요? 기존 담당자 기록은 유지됩니다.")) return;
+  try {
+    await request(`/api/users/${state.selectedUserId}`, { method: "DELETE" });
+    _toast("사용자를 비활성화했습니다.");
+    await loadUsers();
+    const user = state.users.find(item => item.id === state.selectedUserId);
+    if (user) editUser(user);
+    else resetUserForm();
+  } catch (error) { _toast(`사용자 비활성화 실패: ${error.message}`, true); }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 필터
 // ══════════════════════════════════════════════════════════════════
@@ -1323,6 +1512,8 @@ function resetForm() {
   elements.form.reset(); elements.testRunForm.reset();
   elements.testCaseId.value = ""; elements.type.value = "FUNCTIONAL"; elements.priority.value = "MEDIUM"; elements.runStatus.value = "PASSED";
   elements.envOs.value = ""; elements.envBrowser.value = ""; elements.envDevice.value = ""; elements.envServer.value = ""; elements.testConfiguration.value = "";
+  if (elements.assignee) elements.assignee.value = "";
+  if (elements.tcVersion) elements.tcVersion.value = "";
   if (elements.tcFolder) elements.tcFolder.value = "";
   state.selectedTagIds = [];
   renderSelectedTagChips(); renderTagSelect();
@@ -1341,6 +1532,10 @@ function resetForm() {
   if (defSection) defSection.style.display = "none";
   const attSection = document.getElementById("tcAttachSection");
   if (attSection) attSection.style.display = "none";
+  if (elements.auditSection) elements.auditSection.style.display = "none";
+  if (elements.auditList) elements.auditList.innerHTML = "";
+  if (elements.versionSection) elements.versionSection.style.display = "none";
+  if (elements.versionList) elements.versionList.innerHTML = "";
 }
 
 async function populateForm(testCase) {
@@ -1356,6 +1551,8 @@ async function populateForm(testCase) {
   elements.envOs.value        = testCase.os          || "";
   elements.envBrowser.value   = testCase.browser     || "";
   elements.envDevice.value    = testCase.device      || "";
+  if (elements.assignee) elements.assignee.value = testCase.assignee || "";
+  if (elements.tcVersion) elements.tcVersion.value = testCase.version || "";
   elements.envServer.value    = testCase.serverEnvironment?.id ? String(testCase.serverEnvironment.id) : "";
   elements.testConfiguration.value = testCase.testConfiguration?.id ? String(testCase.testConfiguration.id) : "";
   if (elements.tcFolder) elements.tcFolder.value = state.folderAssignments[String(testCase.id)] || "";
@@ -1376,6 +1573,146 @@ async function populateForm(testCase) {
   await loadTestRuns(testCase.id);
   renderDefects(testCase.defects || []);
   loadTestCaseAttachments(testCase.id);
+  await loadTestCaseVersions(testCase.id);
+  await loadAuditLogs(testCase.id);
+}
+
+const AUDIT_ACTION_LABELS = {
+  CREATED: "생성",
+  UPDATED: "수정",
+  STATUS_CHANGED: "상태 변경",
+  MOVED: "폴더 이동",
+  DEFECT_LINKED: "결함 연결",
+  DEFECT_UNLINKED: "결함 해제",
+  VERSION_CREATED: "버전 생성",
+  VERSION_RESTORED: "버전 복원",
+  DELETED: "삭제"
+};
+
+const AUDIT_FIELD_LABELS = {
+  testCase: "테스트케이스",
+  type: "유형",
+  priority: "우선순위",
+  status: "상태",
+  title: "제목",
+  description: "설명",
+  precondition: "사전조건",
+  steps: "단계",
+  notes: "메모",
+  os: "OS",
+  browser: "브라우저",
+  device: "디바이스",
+  assignee: "담당자",
+  version: "버전",
+  folder: "폴더",
+  serverEnvironment: "서버 환경",
+  testConfiguration: "Configuration",
+  areaTags: "영역 태그",
+  defects: "결함"
+};
+
+async function loadAuditLogs(testCaseId = elements.testCaseId?.value) {
+  if (!elements.auditSection || !elements.auditList) return;
+  if (!testCaseId) {
+    elements.auditSection.style.display = "none";
+    elements.auditList.innerHTML = "";
+    return;
+  }
+  elements.auditSection.style.display = "";
+  elements.auditList.innerHTML = '<p class="audit-empty">변경이력을 불러오는 중입니다.</p>';
+  try {
+    const logs = await request(`/api/testcases/${testCaseId}/audit-logs`, { method: "GET" });
+    renderAuditLogs(logs);
+  } catch (e) {
+    elements.auditList.innerHTML = `<p class="audit-empty">변경이력 조회 실패: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderAuditLogs(logs) {
+  if (!elements.auditList) return;
+  if (!logs || logs.length === 0) {
+    elements.auditList.innerHTML = '<p class="audit-empty">아직 기록된 변경이력이 없습니다.</p>';
+    return;
+  }
+  elements.auditList.innerHTML = logs.map(log => {
+    const hasValues = log.oldValue !== null || log.newValue !== null;
+    const oldValue = log.oldValue ?? "없음";
+    const newValue = log.newValue ?? "없음";
+    return `
+      <div class="audit-item">
+        <div class="audit-time">${escapeHtml(formatDateTime(log.createdAt))}</div>
+        <div class="audit-main">
+          <div class="audit-summary">
+            <span class="badge b-tag">${escapeHtml(AUDIT_ACTION_LABELS[log.action] || log.action)}</span>
+            <span>${escapeHtml(AUDIT_FIELD_LABELS[log.fieldName] || log.fieldName)}</span>
+            <span style="color:var(--text-muted);font-weight:500">${escapeHtml(log.actor || "system")}</span>
+          </div>
+          ${hasValues ? `<div class="audit-values"><span class="audit-value" title="${escapeHtml(oldValue)}">${escapeHtml(oldValue)}</span><span class="audit-arrow">→</span><span class="audit-value" title="${escapeHtml(newValue)}">${escapeHtml(newValue)}</span></div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function loadTestCaseVersions(testCaseId = elements.testCaseId?.value) {
+  if (!elements.versionSection || !elements.versionList) return;
+  if (!testCaseId) {
+    elements.versionSection.style.display = "none";
+    elements.versionList.innerHTML = "";
+    return;
+  }
+  elements.versionSection.style.display = "";
+  elements.versionList.innerHTML = '<p class="version-empty">버전을 불러오는 중입니다.</p>';
+  try {
+    const versions = await request(`/api/testcases/${testCaseId}/versions`, { method: "GET" });
+    renderTestCaseVersions(versions);
+  } catch (e) {
+    elements.versionList.innerHTML = `<p class="version-empty">버전 조회 실패: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderTestCaseVersions(versions) {
+  if (!elements.versionList) return;
+  if (!versions || versions.length === 0) {
+    elements.versionList.innerHTML = '<p class="version-empty">아직 저장된 버전이 없습니다.</p>';
+    return;
+  }
+  const latestNumber = Math.max(...versions.map(v => v.versionNumber || 0));
+  elements.versionList.innerHTML = versions.map(version => {
+    const latest = version.versionNumber === latestNumber;
+    const env = [version.os, version.browser, version.device].filter(Boolean).join(" / ") || "환경 없음";
+    const tags = version.areaTagNames ? ` · ${version.areaTagNames}` : "";
+    return `
+      <div class="version-item">
+        <div class="version-no">v${escapeHtml(version.versionNumber)}</div>
+        <div class="version-main">
+          <div class="version-title">
+            <span>${escapeHtml(version.label || `v${version.versionNumber}`)}</span>
+            ${latest ? '<span class="badge b-ready">현재</span>' : ""}
+            <span class="badge b-tag">${escapeHtml(version.status || "")}</span>
+          </div>
+          <div class="version-meta" title="${escapeHtml(version.title || "")}">${escapeHtml(formatDateTime(version.createdAt))} · ${escapeHtml(version.changeSummary || "스냅샷")} · ${escapeHtml(env)}${escapeHtml(tags)}</div>
+        </div>
+        <button type="button" class="btn btn-sm version-restore-btn" data-version-id="${version.id}" ${latest ? "disabled" : ""}>복원</button>
+      </div>`;
+  }).join("");
+  elements.versionList.querySelectorAll(".version-restore-btn").forEach(button => {
+    button.addEventListener("click", () => restoreTestCaseVersion(button.dataset.versionId));
+  });
+}
+
+async function restoreTestCaseVersion(versionId) {
+  const testCaseId = elements.testCaseId.value;
+  if (!testCaseId || !versionId) return;
+  if (!confirm("선택한 버전으로 현재 테스트케이스를 복원할까요? 현재 상태도 새 버전으로 기록됩니다.")) return;
+  try {
+    const restored = await request(`/api/testcases/${testCaseId}/versions/${versionId}/restore`, { method: "POST" });
+    _toast(`TC-${String(restored.id).padStart(3,"0")} 버전을 복원했습니다.`);
+    await loadTestCases();
+    const fresh = state.allTestCases.find(tc => tc.id === restored.id) || restored;
+    await populateForm(fresh);
+  } catch (e) {
+    _toast(`버전 복원 실패: ${e.message}`, true);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1746,6 +2083,8 @@ function duplicateCurrentTestCase() {
   elements.title.value = `${tc.title} 사본`; elements.description.value = tc.description||""; elements.precondition.value = tc.precondition||"";
   renderSteps(parseSteps(tc.steps));
   elements.notes.value = tc.notes||""; elements.envOs.value = tc.os||""; elements.envBrowser.value = tc.browser||""; elements.envDevice.value = tc.device||"";
+  if (elements.assignee) elements.assignee.value = tc.assignee || "";
+  if (elements.tcVersion) elements.tcVersion.value = tc.version || "";
   elements.envServer.value = tc.serverEnvironment?.id ? String(tc.serverEnvironment.id) : "";
   elements.testConfiguration.value = tc.testConfiguration?.id ? String(tc.testConfiguration.id) : "";
   if (elements.tcFolder) elements.tcFolder.value = "";
@@ -1774,8 +2113,11 @@ function getPayload() {
     notes:        elements.notes.value.trim() || null,
     os:           elements.envOs.value||null, browser: elements.envBrowser.value||null,
     device:       elements.envDevice.value||null, areaTagIds: [...state.selectedTagIds],
+    assignee:     elements.assignee?.value.trim() || null,
+    version:      elements.tcVersion?.value.trim() || null,
     serverEnvironmentId: elements.envServer.value ? Number(elements.envServer.value) : null,
-    testConfigurationId: elements.testConfiguration.value ? Number(elements.testConfiguration.value) : null
+    testConfigurationId: elements.testConfiguration.value ? Number(elements.testConfiguration.value) : null,
+    folderId: elements.tcFolder?.value ? Number(elements.tcFolder.value) : null
   };
 }
 
@@ -2566,6 +2908,7 @@ function hidePlanEditors() {
   document.getElementById("planEditorEmpty").hidden = true;
   document.getElementById("planForm").hidden = true;
   document.getElementById("suiteForm").hidden = true;
+  document.getElementById("suiteRunPanel").hidden = true;
 }
 
 function showPlanForm(plan = null) {
@@ -2592,7 +2935,113 @@ function showSuiteForm(suite = null) {
   document.getElementById("suiteName").value = suite?.name ?? "";
   document.getElementById("suiteDescription").value = suite?.description ?? "";
   document.getElementById("deleteSuiteButton").disabled = !suite;
+  document.getElementById("suiteRunFromEditButton").hidden = !suite;
   renderSuiteCasePicker(suite?.testCases?.map(testCase => testCase.id) ?? []);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 스위트 실행 — 케이스별 PASS/FAIL/BLOCK 기록 (TestRun API 재사용)
+// ══════════════════════════════════════════════════════════════════
+
+const SUITE_RUN_LABEL = { PASSED: "통과", FAILED: "실패", BLOCKED: "차단" };
+
+function showSuiteRun(suite = null) {
+  if (!state.selectedPlanId) return;
+  const resolved = suite || state.testSuites.find(s => s.id === state.selectedSuiteId);
+  if (!resolved) { showPlanForm(state.testPlans.find(p => p.id === state.selectedPlanId)); return; }
+  hidePlanEditors();
+  document.getElementById("suiteRunPanel").hidden = false;
+  document.getElementById("suiteRunTitle").textContent = `${resolved.name} 빠른 실행`;
+  loadSuiteRun(resolved);
+}
+
+// 통과/실패/차단/재테스트를 비율대로 이어 붙인 세그먼트 진행바. 미실행은 빈 트랙으로 남는다.
+function renderSegmentBar(barEl, c = {}) {
+  if (!barEl) return;
+  const total = c.total || 0;
+  const seg = (n, cls) => n > 0 ? `<div class="bar-seg ${cls}" style="width:${(n / total) * 100}%"></div>` : "";
+  barEl.innerHTML = total === 0 ? "" :
+    seg(c.passed, "pass") + seg(c.failed, "fail") + seg(c.blocked, "block") + seg(c.retest, "retest");
+}
+
+async function loadSuiteRun(suite) {
+  const cases = suite.testCases ?? [];
+  const cont = document.getElementById("suiteRunCases");
+  if (cases.length === 0) {
+    document.getElementById("suiteRunStats").textContent = "";
+    renderSegmentBar(document.getElementById("suiteRunBar"), { total: 0 });
+    cont.innerHTML = '<div class="plan-empty">이 스위트에 배정된 테스트케이스가 없습니다. 편집에서 케이스를 추가하세요.</div>';
+    return;
+  }
+  cont.innerHTML = '<div class="plan-empty">실행 이력을 불러오는 중…</div>';
+  // 각 케이스의 최신 실행 결과 조회 (응답은 executedAt 내림차순)
+  const latest = {};
+  await Promise.all(cases.map(async tc => {
+    try {
+      const runs = await request(`/api/testcases/${tc.id}/runs`, { method: "GET" });
+      latest[tc.id] = runs[0] ?? null;
+    } catch (_e) { latest[tc.id] = null; }
+  }));
+  renderSuiteRun(suite, latest);
+}
+
+function renderSuiteRun(suite, latest) {
+  const cases = suite.testCases ?? [];
+  const total = cases.length;
+  const executed = cases.filter(tc => latest[tc.id]).length;
+  const pass  = cases.filter(tc => latest[tc.id]?.status === "PASSED").length;
+  const fail  = cases.filter(tc => latest[tc.id]?.status === "FAILED").length;
+  const block = cases.filter(tc => latest[tc.id]?.status === "BLOCKED").length;
+
+  const pct = total ? Math.round((executed / total) * 100) : 0;
+  renderSegmentBar(document.getElementById("suiteRunBar"), { total, passed: pass, failed: fail, blocked: block });
+  document.getElementById("suiteRunStats").innerHTML =
+    `<span class="suite-run-prog">${executed}/${total} 실행 (${pct}%)</span>` +
+    `<span class="suite-run-chip pass">통과 ${pass}</span>` +
+    `<span class="suite-run-chip fail">실패 ${fail}</span>` +
+    `<span class="suite-run-chip block">차단 ${block}</span>`;
+
+  const cont = document.getElementById("suiteRunCases");
+  cont.innerHTML = "";
+  cases.forEach(tc => {
+    const run = latest[tc.id];
+    const statusKey = run ? run.status.toLowerCase() : "none";
+    const badge = run
+      ? `<span class="suite-run-badge ${statusKey}">${SUITE_RUN_LABEL[run.status] || run.status}</span><span class="suite-run-when">${escapeHtml(formatDateTime(run.executedAt))}</span>`
+      : `<span class="suite-run-badge none">미실행</span>`;
+    const row = document.createElement("div");
+    row.className = "suite-run-case";
+    row.innerHTML =
+      `<div class="suite-run-case-hd">` +
+        `<span class="suite-run-tc">TC-${String(tc.id).padStart(3, "0")}</span>` +
+        `<span class="suite-run-name" title="${escapeHtml(tc.title)}">${escapeHtml(tc.title)}</span>` +
+        badge +
+      `</div>` +
+      `<div class="suite-run-case-actions">` +
+        `<input class="form-input suite-run-note" placeholder="실제 결과 / 비고 (선택)">` +
+        `<button type="button" class="btn btn-sm suite-run-btn pass" data-s="PASSED">통과</button>` +
+        `<button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>` +
+        `<button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>` +
+      `</div>`;
+    const note = row.querySelector(".suite-run-note");
+    row.querySelectorAll(".suite-run-btn").forEach(btn => {
+      btn.addEventListener("click", () => recordSuiteCaseRun(suite, tc, btn.dataset.s, note.value.trim(), latest));
+    });
+    cont.appendChild(row);
+  });
+}
+
+async function recordSuiteCaseRun(suite, testCase, status, note, latest) {
+  const actualResult = note || `${SUITE_RUN_LABEL[status]} 처리`;
+  try {
+    const created = await request(`/api/testcases/${testCase.id}/runs`, {
+      method: "POST",
+      body: JSON.stringify({ status, actualResult, notes: note || null })
+    });
+    latest[testCase.id] = created;
+    renderSuiteRun(suite, latest);
+    _toast(`TC-${String(testCase.id).padStart(3, "0")} ${SUITE_RUN_LABEL[status]} 기록됨`);
+  } catch (e) { _toast(`실행 기록 실패: ${e.message}`, true); }
 }
 
 function renderSuiteCasePicker(selectedIds) {
@@ -2677,10 +3126,320 @@ async function deleteSelectedSuite() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 테스트런 (실행 사이클) — 스위트 스냅샷 + 케이스별 결과 기록
+// ══════════════════════════════════════════════════════════════════
+
+const RESULT_LABEL = { UNTESTED: "미실행", PASSED: "통과", FAILED: "실패", BLOCKED: "차단", RETEST: "재테스트" };
+const RESULT_CLASS = { UNTESTED: "untested", PASSED: "passed", FAILED: "failed", BLOCKED: "blocked", RETEST: "retest" };
+const EXEC_STATUS_LABEL = { IN_PROGRESS: "진행 중", COMPLETED: "완료" };
+
+async function loadExecutions() {
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    state.executions = await request("/api/test-runs", { method: "GET" });
+    renderExecutionList();
+    if (state.selectedExecutionId && state.executions.some(e => e.id === state.selectedExecutionId)) {
+      await openExecution(state.selectedExecutionId);
+    } else {
+      state.selectedExecutionId = null;
+      document.getElementById("runDetail").hidden = true;
+      document.getElementById("runDetailEmpty").hidden = false;
+    }
+  } catch (e) {
+    state.executions = []; renderExecutionList();
+    state.selectedExecutionId = null;
+    document.getElementById("runDetail").hidden = true;
+    document.getElementById("runDetailEmpty").hidden = false;
+    _toast(`테스트런 조회 실패: ${e.message}`, true);
+  }
+}
+
+function renderExecutionList() {
+  const list = document.getElementById("runList");
+  const empty = document.getElementById("runEmpty");
+  document.getElementById("runCount").textContent = state.executions.length;
+  list.innerHTML = "";
+  if (state.executions.length === 0) { empty.hidden = false; return; }
+  empty.hidden = true;
+  state.executions.forEach(exec => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `run-cycle-item${exec.id === state.selectedExecutionId ? " active" : ""}`;
+    const done = exec.total - exec.untested;
+    item.innerHTML =
+      `<div class="run-cycle-name">${escapeHtml(exec.name)}</div>` +
+      `<div class="run-cycle-meta">` +
+        `<span class="badge ${exec.status === "COMPLETED" ? "b-pass" : "b-tag"}">${EXEC_STATUS_LABEL[exec.status] || exec.status}</span>` +
+        `<span>${done}/${exec.total} (${exec.progressPct}%)</span>` +
+        (exec.failed ? `<span class="run-cycle-fail">실패 ${exec.failed}</span>` : "") +
+      `</div>`;
+    item.addEventListener("click", () => openExecution(exec.id));
+    list.appendChild(item);
+  });
+}
+
+async function openExecution(id) {
+  state.selectedExecutionId = id;
+  try {
+    const exec = await request(`/api/test-runs/${id}`, { method: "GET" });
+    renderExecutionDetail(exec);
+    renderExecutionList();
+  } catch (e) { _toast(`테스트런 조회 실패: ${e.message}`, true); }
+}
+
+// 결과 분포 도넛 차트 (완료 리포트용)
+function donutSvg(c) {
+  const total = c.total || 0;
+  const r = 54, cx = 70, cy = 70, sw = 20, C = 2 * Math.PI * r;
+  const segs = [
+    { n: c.passed,  color: "var(--c-pass)" },
+    { n: c.failed,  color: "var(--c-fail)" },
+    { n: c.blocked, color: "#b45309" },
+    { n: c.retest,  color: "#d97706" },
+    { n: c.untested, color: "#e5e5e3" }
+  ].filter(s => s.n > 0);
+  let offset = 0;
+  const arcs = total === 0
+    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e5e3" stroke-width="${sw}"/>`
+    : segs.map(s => {
+        const len = (s.n / total) * C;
+        const el = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+        offset += len;
+        return el;
+      }).join("");
+  const executed = total - c.untested;
+  const passRate = executed ? Math.round((c.passed / executed) * 100) : 0;
+  return `<svg width="140" height="140" viewBox="0 0 140 140" class="run-donut">${arcs}` +
+    `<text x="${cx}" y="${cy - 1}" text-anchor="middle" class="run-donut-pct">${passRate}%</text>` +
+    `<text x="${cx}" y="${cy + 17}" text-anchor="middle" class="run-donut-sub">통과율</text></svg>`;
+}
+
+function renderExecutionDetail(exec) {
+  document.getElementById("runDetailEmpty").hidden = true;
+  document.getElementById("runDetail").hidden = false;
+  document.getElementById("runDetailName").textContent = exec.name;
+  const created = exec.createdAt ? formatDateTime(exec.createdAt) : "";
+  const isCompleted = exec.status === "COMPLETED";
+  const completedAt = exec.completedAt ? formatDateTime(exec.completedAt) : "";
+  document.getElementById("runDetailMeta").textContent =
+    `${exec.suiteName || "스위트"} · 생성 ${created}${exec.assignee ? " · " + exec.assignee : ""}` +
+    (isCompleted && completedAt ? ` · 완료 ${completedAt}` : "");
+
+  const statusBadge = document.getElementById("runDetailStatus");
+  statusBadge.textContent = EXEC_STATUS_LABEL[exec.status] || exec.status;
+  statusBadge.className = `badge ${isCompleted ? "b-pass" : "b-tag"}`;
+
+  document.getElementById("runCompleteButton").textContent = isCompleted ? "다시 열기" : "완료 처리";
+
+  const done = exec.total - exec.untested;
+  const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
+
+  const progress = document.getElementById("runDetailProgress");
+  const report = document.getElementById("runDetailReport");
+
+  if (isCompleted) {
+    // ── TestRail식 완료 리포트: 도넛 + 요약 (읽기 전용) ──
+    progress.hidden = true;
+    report.hidden = false;
+    report.innerHTML =
+      `<div class="run-report-chart">${donutSvg(counts)}</div>` +
+      `<div class="run-report-summary">` +
+        `<div class="run-report-line"><span class="run-report-num">${done}/${exec.total}</span><span class="run-report-cap">실행 완료</span></div>` +
+        `<div class="suite-run-stats" style="margin-top:6px">${runChips(exec)}</div>` +
+        (completedAt ? `<div class="run-report-when">완료 ${completedAt}</div>` : "") +
+      `</div>`;
+  } else {
+    progress.hidden = false;
+    report.hidden = true;
+    renderRunProgress(exec);
+  }
+
+  state.currentExec = exec;
+  const cont = document.getElementById("runDetailItems");
+  cont.innerHTML = "";
+  (exec.items || []).forEach(item => cont.appendChild(buildRunItemRow(item, isCompleted)));
+}
+
+function runChips(exec) {
+  return `<span class="suite-run-chip pass">통과 ${exec.passed}</span>` +
+    `<span class="suite-run-chip fail">실패 ${exec.failed}</span>` +
+    `<span class="suite-run-chip block">차단 ${exec.blocked}</span>` +
+    (exec.retest ? `<span class="suite-run-chip retest">재테스트 ${exec.retest}</span>` : "") +
+    (exec.untested ? `<span class="suite-run-chip">미실행 ${exec.untested}</span>` : "");
+}
+
+// 진행바 + 집계 칩만 갱신 (진행 중 화면 전용) — 결과 기록 시 전체 재렌더 없이 헤더만 업데이트.
+function renderRunProgress(exec) {
+  const done = exec.total - exec.untested;
+  renderSegmentBar(document.getElementById("runDetailBar"),
+    { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest });
+  document.getElementById("runDetailStats").innerHTML =
+    `<span class="suite-run-prog">${done}/${exec.total} 실행 (${exec.progressPct}%)</span>` + runChips(exec);
+}
+
+// 실행 결과 행 한 줄 — 초기 렌더와 기록 후 인플레이스 교체에서 공용으로 쓴다.
+function buildRunItemRow(item, isCompleted) {
+  const row = document.createElement("div");
+  row.className = `suite-run-case${isCompleted ? " is-locked" : ""}`;
+  row.dataset.itemId = item.id;
+  row.dataset.status = item.status;
+  const cls = RESULT_CLASS[item.status] || "untested";
+  const head =
+    `<div class="suite-run-case-hd">` +
+      `<span class="suite-run-tc">TC-${String(item.testCaseId).padStart(3, "0")}</span>` +
+      `<span class="suite-run-name" title="${escapeHtml(item.caseTitle)}">${escapeHtml(item.caseTitle)}</span>` +
+      `<span class="suite-run-badge ${cls}">${RESULT_LABEL[item.status] || item.status}</span>` +
+      (item.executedAt ? `<span class="suite-run-when">${escapeHtml(formatDateTime(item.executedAt))}</span>` : "") +
+    `</div>`;
+  if (isCompleted) {
+    // 읽기 전용: 결과 + 비고 텍스트만
+    row.innerHTML = head + (item.comment ? `<div class="run-item-comment">${escapeHtml(item.comment)}</div>` : "");
+    return row;
+  }
+  const act = (s) => item.status === s ? " active" : "";
+  row.innerHTML = head +
+    `<div class="suite-run-case-actions">` +
+      `<input class="form-input suite-run-note" placeholder="비고 (선택)" value="${escapeHtml(item.comment || "")}">` +
+      `<button type="button" class="btn btn-sm suite-run-btn pass${act("PASSED")}" data-s="PASSED">통과</button>` +
+      `<button type="button" class="btn btn-sm suite-run-btn fail${act("FAILED")}" data-s="FAILED">실패</button>` +
+      `<button type="button" class="btn btn-sm suite-run-btn block${act("BLOCKED")}" data-s="BLOCKED">차단</button>` +
+      `<button type="button" class="btn btn-sm suite-run-btn retest${act("RETEST")}" data-s="RETEST">재테스트</button>` +
+    `</div>`;
+  const note = row.querySelector(".suite-run-note");
+  row.querySelectorAll(".suite-run-btn").forEach(btn => {
+    btn.addEventListener("click", () => recordExecutionItem(row, btn.dataset.s, note.value.trim()));
+  });
+  return row;
+}
+
+async function recordExecutionItem(rowEl, clickedStatus, comment) {
+  const exec = state.currentExec;
+  if (!exec) return;
+  const itemId = Number(rowEl.dataset.itemId);
+  // 같은 결과를 다시 누르면 '미실행'으로 되돌린다 — 오클릭 복구.
+  const target = rowEl.dataset.status === clickedStatus ? "UNTESTED" : clickedStatus;
+  const buttons = rowEl.querySelectorAll(".suite-run-btn");
+  buttons.forEach(b => { b.disabled = true; });           // 중복 제출 방지
+  try {
+    const updated = await request(`/api/test-runs/${exec.id}/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: target, comment: comment || null })
+    });
+    state.currentExec = updated;
+    const updatedItem = (updated.items || []).find(it => it.id === itemId);
+    if (updatedItem) rowEl.replaceWith(buildRunItemRow(updatedItem, false)); // 해당 행만 교체 → 스크롤·타 행 비고 보존
+    renderRunProgress(updated);
+    const idx = state.executions.findIndex(e => e.id === updated.id);
+    if (idx >= 0) { state.executions[idx] = { ...state.executions[idx], ...summaryOf(updated) }; renderExecutionList(); }
+    _toast(target === "UNTESTED" ? "미실행으로 되돌렸습니다." : `${RESULT_LABEL[target]} 기록됨`);
+  } catch (e) {
+    buttons.forEach(b => { b.disabled = false; });
+    _toast(`결과 기록 실패: ${e.message}`, true);
+  }
+}
+
+function summaryOf(exec) {
+  const { items, ...rest } = exec;
+  return rest;
+}
+
+async function toggleExecutionComplete() {
+  const exec = await request(`/api/test-runs/${state.selectedExecutionId}`, { method: "GET" }).catch(() => null);
+  if (!exec) return;
+  const next = exec.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED";
+  try {
+    await request(`/api/test-runs/${exec.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: exec.name, description: exec.description || null, status: next, assignee: exec.assignee || null })
+    });
+    _toast(next === "COMPLETED" ? "테스트런을 완료 처리했습니다." : "테스트런을 다시 열었습니다.");
+    await loadExecutions();
+  } catch (e) { _toast(`상태 변경 실패: ${e.message}`, true); }
+}
+
+async function deleteSelectedExecution() {
+  if (!state.selectedExecutionId || !window.confirm("이 테스트런을 삭제할까요? 기록된 결과도 함께 삭제됩니다.")) return;
+  try {
+    await request(`/api/test-runs/${state.selectedExecutionId}`, { method: "DELETE" });
+    state.selectedExecutionId = null;
+    _toast("테스트런을 삭제했습니다.");
+    await loadExecutions();
+  } catch (e) { _toast(`삭제 실패: ${e.message}`, true); }
+}
+
+// ── 새 테스트런 모달 ───────────────────────────────────────────────
+
+async function openNewRunModal() {
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    state.testPlans = await request("/api/test-plans", { method: "GET" });
+    await loadUsers();
+  } catch (e) { _toast(`플랜 조회 실패: ${e.message}`, true); return; }
+  if (state.testPlans.length === 0) { _toast("먼저 테스트 플랜과 스위트를 만들어주세요.", true); return; }
+  const planSel = document.getElementById("runPlanSelect");
+  planSel.innerHTML = state.testPlans.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+  document.getElementById("runNameInput").value = "";
+  document.getElementById("runAssigneeInput").value = "";
+  await populateRunSuiteSelect(Number(planSel.value));
+  document.getElementById("newRunModal").hidden = false;
+  document.getElementById("runPlanSelect").focus();
+}
+
+async function populateRunSuiteSelect(planId) {
+  const suiteSel = document.getElementById("runSuiteSelect");
+  suiteSel.innerHTML = "";
+  try {
+    const suites = await request(`/api/test-plans/${planId}/suites`, { method: "GET" });
+    if (suites.length === 0) { suiteSel.innerHTML = '<option value="">스위트 없음</option>'; return; }
+    const executable = suites.filter(s => (s.testCases?.length || 0) > 0);
+    if (executable.length === 0) {
+      suiteSel.innerHTML = '<option value="">실행 가능한 스위트 없음</option>';
+      return;
+    }
+    suiteSel.innerHTML = suites
+      .map(s => {
+        const count = s.testCases?.length || 0;
+        return `<option value="${s.id}" ${count === 0 ? "disabled" : ""}>${escapeHtml(s.name)} (${count}건${count === 0 ? " · 생성 불가" : ""})</option>`;
+      })
+      .join("");
+    suiteSel.value = String(executable[0].id);
+  } catch (e) { suiteSel.innerHTML = '<option value="">조회 실패</option>'; }
+}
+
+async function createExecution() {
+  const suiteId = Number(document.getElementById("runSuiteSelect").value);
+  if (!suiteId) { _toast("스위트를 선택하세요.", true); return; }
+  const createButton = document.getElementById("newRunCreateButton");
+  const payload = {
+    suiteId,
+    name: document.getElementById("runNameInput").value.trim() || null,
+    assignee: document.getElementById("runAssigneeInput").value.trim() || null
+  };
+  try {
+    createButton.disabled = true;
+    createButton.textContent = "생성 중...";
+    const created = await request("/api/test-runs", { method: "POST", body: JSON.stringify(payload) });
+    closeNewRunModal();
+    state.selectedExecutionId = created.id;
+    _toast(`테스트런 '${created.name}' 생성됨 (${created.total}건)`);
+    await loadExecutions();
+  } catch (e) { _toast(`테스트런 생성 실패: ${e.message}`, true); }
+  finally {
+    createButton.disabled = false;
+    createButton.textContent = "생성";
+  }
+}
+
+function closeNewRunModal() {
+  document.getElementById("newRunModal").hidden = true;
+}
+
+// ══════════════════════════════════════════════════════════════════
 // API
 // ══════════════════════════════════════════════════════════════════
 
 async function request(path, options = {}) {
+  state.apiBaseUrl = normalizeApiBaseUrl(state.apiBaseUrl);
   const response = await window.desktopApi.request({
     url: `${state.apiBaseUrl}${path}`,
     method: options.method ?? "GET",
@@ -2775,7 +3534,6 @@ async function handleSubmit(event) {
 
   const payload = getPayload();
   const id      = elements.testCaseId.value;
-  console.log("[Save] payload:", payload, "id:", id);
 
   try {
     if (id) {
@@ -2846,8 +3604,13 @@ async function handleDelete() {
 }
 
 async function verifyConnection() {
-  state.apiBaseUrl = getApiBaseUrl();
-  try { await request("/api/testcases",{method:"GET"}); _toast(`연결 성공: ${state.apiBaseUrl}`); }
+  try {
+    state.apiBaseUrl = getApiBaseUrl();
+    if (elements.apiBaseUrl) elements.apiBaseUrl.value = state.apiBaseUrl;
+    localStorage.setItem("tms.apiBaseUrl", state.apiBaseUrl);
+    await request("/api/testcases",{method:"GET"});
+    _toast(`연결 성공: ${state.apiBaseUrl}`);
+  }
   catch (e) { _toast(`연결 실패: ${e.message}`, true); }
 }
 
@@ -2901,7 +3664,12 @@ async function bootstrap() {
     const el = document.getElementById(id); if (el) el.textContent = [config.platform, `v${config.version}`][i];
   });
 
-  state.apiBaseUrl = localStorage.getItem("tms.apiBaseUrl") || config.defaultApiBaseUrl;
+  try {
+    state.apiBaseUrl = normalizeApiBaseUrl(localStorage.getItem("tms.apiBaseUrl"), config.defaultApiBaseUrl);
+  } catch (_e) {
+    state.apiBaseUrl = normalizeApiBaseUrl(config.defaultApiBaseUrl);
+    localStorage.setItem("tms.apiBaseUrl", state.apiBaseUrl);
+  }
   if (elements.apiBaseUrl) elements.apiBaseUrl.value = state.apiBaseUrl;
 
   initStatusSelector();
@@ -2910,6 +3678,8 @@ async function bootstrap() {
   elements.form.addEventListener("submit", handleSubmit);
   elements.testRunForm.addEventListener("submit", handleTestRunSubmit);
   elements.refreshButton.addEventListener("click",   loadTestCases);
+  elements.auditRefreshBtn?.addEventListener("click", () => loadAuditLogs());
+  elements.versionRefreshBtn?.addEventListener("click", () => loadTestCaseVersions());
   document.getElementById("jiraSyncAllBtn")?.addEventListener("click", jiraSyncAll);
 
   // 결함 추가 / 연결
@@ -2946,6 +3716,20 @@ async function bootstrap() {
   document.getElementById("suiteForm").addEventListener("submit", saveSuite);
   document.getElementById("deletePlanButton").addEventListener("click", deleteSelectedPlan);
   document.getElementById("deleteSuiteButton").addEventListener("click", deleteSelectedSuite);
+  document.getElementById("suiteEditButton").addEventListener("click", () => showSuiteForm(state.testSuites.find(s => s.id === state.selectedSuiteId)));
+  document.getElementById("suiteRunFromEditButton").addEventListener("click", () => showSuiteRun());
+
+  document.getElementById("newRunButton").addEventListener("click", openNewRunModal);
+  document.getElementById("newRunCancelButton").addEventListener("click", closeNewRunModal);
+  document.getElementById("newRunCloseButton").addEventListener("click", closeNewRunModal);
+  document.getElementById("newRunCreateButton").addEventListener("click", createExecution);
+  document.getElementById("runPlanSelect").addEventListener("change", e => populateRunSuiteSelect(Number(e.target.value)));
+  document.getElementById("runCompleteButton").addEventListener("click", toggleExecutionComplete);
+  document.getElementById("runDeleteButton").addEventListener("click", deleteSelectedExecution);
+  document.getElementById("newRunModal").addEventListener("click", e => { if (e.target.id === "newRunModal") closeNewRunModal(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !document.getElementById("newRunModal").hidden) closeNewRunModal();
+  });
 
   const fab = document.getElementById("folderAddBtn");
   if (fab) fab.addEventListener("click", addFolder);
@@ -2966,6 +3750,9 @@ async function bootstrap() {
   document.getElementById("newConfigurationButton").addEventListener("click", resetConfigurationForm);
   document.getElementById("configurationForm").addEventListener("submit", saveConfiguration);
   document.getElementById("deleteConfigurationButton").addEventListener("click", deleteConfiguration);
+  document.getElementById("newUserButton").addEventListener("click", resetUserForm);
+  document.getElementById("userForm").addEventListener("submit", saveUser);
+  document.getElementById("deleteUserButton").addEventListener("click", deactivateUser);
 
   requiredFieldConfigs.forEach(({ element }) => {
     if (!element) return;
@@ -2973,7 +3760,14 @@ async function bootstrap() {
     element.addEventListener("change", () => element.setCustomValidity(""));
   });
   elements.apiBaseUrl.addEventListener("change", () => {
-    state.apiBaseUrl = getApiBaseUrl(); localStorage.setItem("tms.apiBaseUrl", state.apiBaseUrl);
+    try {
+      state.apiBaseUrl = getApiBaseUrl();
+      elements.apiBaseUrl.value = state.apiBaseUrl;
+      localStorage.setItem("tms.apiBaseUrl", state.apiBaseUrl);
+    } catch (e) {
+      _toast(e.message, true);
+      elements.apiBaseUrl.value = state.apiBaseUrl;
+    }
   });
 
   // 초기 상태
@@ -2981,6 +3775,7 @@ async function bootstrap() {
   await loadAreaTags();
   await loadServerEnvironments();
   await loadTestConfigurations();
+  await loadUsers();
   await loadTestCases();          // TC 먼저 로드해야 folderAssignments 재구성 가능
   await migrateLocalStorageFolders(); // localStorage → DB 최초 1회 마이그레이션
   await loadFolders();            // DB에서 폴더 트리 로드

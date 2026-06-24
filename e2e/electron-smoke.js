@@ -205,10 +205,51 @@ async function main() {
     await page.locator("#suiteCasePicker .suite-case-option", { hasText: updatedTitle }).locator('input[type="checkbox"]').check();
     await page.click('#suiteForm button[type="submit"]');
     await page.waitForFunction(
-      (suiteName) => Array.from(document.querySelectorAll("#suiteList .plan-item-name")).some((node) => node.textContent === suiteName),
+      (suiteName) => Array.from(document.querySelectorAll("#suiteList .tc-node-label")).some((node) => node.textContent === suiteName),
       uniqueSuite
     );
-    assert.match(await page.locator("#suiteList .suite-list-item", { hasText: uniqueSuite }).textContent(), /1 test cases/);
+    assert.match(await page.locator("#suiteList .tc-node", { hasText: uniqueSuite }).textContent(), /1건/);
+
+    // 스위트 빠른 실행: 편집 화면에서 실행 버튼으로 진입해 케이스를 통과 처리
+    await page.click("#suiteList .tc-node", { hasText: uniqueSuite });
+    await page.waitForSelector("#suiteForm:not([hidden])");
+    await page.click("#suiteRunFromEditButton");
+    await page.waitForSelector("#suiteRunPanel:not([hidden])");
+    await page.waitForSelector("#suiteRunCases .suite-run-case");
+    assert.equal(await page.locator("#suiteRunCases .suite-run-case").count(), 1);
+    await page.click('#suiteRunCases .suite-run-btn[data-s="PASSED"]');
+    await page.waitForFunction(
+      () => document.querySelector("#suiteRunStats .suite-run-prog")?.textContent.includes("1/1")
+    );
+    assert.equal(await page.locator("#suiteRunCases .suite-run-badge.passed").count(), 1);
+    assert.equal(await page.locator("#suiteRunBar .bar-seg.pass").evaluate((el) => el.style.width), "100%");
+
+    // 테스트런(실행 사이클): 스위트로부터 런 생성 → 케이스 결과 기록 → 완료 처리
+    await page.click("#navRuns");
+    await page.click("#newRunButton");
+    await page.waitForSelector("#newRunModal:not([hidden])");
+    await page.selectOption("#runPlanSelect", { label: uniquePlan });
+    await page.selectOption("#runSuiteSelect", { label: `${uniqueSuite} (1건)` });
+    await page.click("#newRunCreateButton");
+    await page.waitForSelector("#runDetail:not([hidden])");
+    await page.waitForFunction(
+      (suiteName) => Array.from(document.querySelectorAll("#runList .run-cycle-name")).some((n) => n.textContent.includes(suiteName)),
+      uniqueSuite
+    );
+    assert.equal(await page.locator("#runDetailItems .suite-run-case").count(), 1);
+    assert.equal(await page.locator("#runDetailItems .suite-run-badge.untested").count(), 1);
+
+    await page.click('#runDetailItems .suite-run-btn[data-s="PASSED"]');
+    await page.waitForFunction(
+      () => document.querySelector("#runDetailStats .suite-run-prog")?.textContent.includes("1/1")
+    );
+    assert.equal(await page.locator("#runDetailItems .suite-run-badge.passed").count(), 1);
+    assert.equal(await page.locator("#runDetailBar .bar-seg.pass").evaluate((el) => el.style.width), "100%");
+
+    await page.click("#runCompleteButton");
+    await page.waitForFunction(
+      () => document.querySelector("#runDetailStatus")?.textContent === "완료"
+    );
 
     await page.click("#navTC");
     await page.fill("#filterKeyword", "");
@@ -240,6 +281,7 @@ async function main() {
       blockedRunRecorded: true,
       createdPlan: uniquePlan,
       createdSuite: uniqueSuite,
+      testRunCompleted: true,
       createdServerEnvironment: uniqueServerEnvironment,
       createdConfiguration: uniqueConfiguration
     }, null, 2));
