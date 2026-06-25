@@ -1,0 +1,67 @@
+package com.tms.execution.controller;
+
+import com.tms.execution.dto.CreateExecutionRequest;
+import com.tms.execution.dto.ExecutionResponse;
+import com.tms.execution.dto.RecordResultRequest;
+import com.tms.execution.dto.UpdateExecutionRequest;
+import com.tms.execution.service.ExecutionService;
+import jakarta.validation.Valid;
+import java.net.URI;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/test-runs")
+public class ExecutionController {
+
+    private final ExecutionService executionService;
+
+    public ExecutionController(ExecutionService executionService) {
+        this.executionService = executionService;
+    }
+
+    @GetMapping
+    public List<ExecutionResponse> getExecutions() {
+        return executionService.getExecutions();
+    }
+
+    @GetMapping("/{id}")
+    public ExecutionResponse getExecution(@PathVariable Long id) {
+        return executionService.getExecution(id);
+    }
+
+    @PostMapping
+    public ResponseEntity<ExecutionResponse> createExecution(@Valid @RequestBody CreateExecutionRequest request) {
+        ExecutionResponse response = executionService.createExecution(request);
+        return ResponseEntity.created(URI.create("/api/test-runs/" + response.id())).body(response);
+    }
+
+    @PutMapping("/{id}")
+    public ExecutionResponse updateExecution(@PathVariable Long id, @Valid @RequestBody UpdateExecutionRequest request) {
+        return executionService.updateExecution(id, request);
+    }
+
+    @PatchMapping("/{id}/items/{itemId}")
+    public ExecutionResponse recordResult(
+            @PathVariable Long id,
+            @PathVariable Long itemId,
+            @Valid @RequestBody RecordResultRequest request
+    ) {
+        return executionService.recordResult(id, itemId, request);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteExecution(@PathVariable Long id) {
+        executionService.deleteExecution(id);
+        return ResponseEntity.noContent().build();
+    }
+}
