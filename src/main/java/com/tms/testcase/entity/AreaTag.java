@@ -15,8 +15,11 @@ public class AreaTag {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 50)
+    @Column(nullable = false, length = 50)
     private String name;
+
+    @Column(name = "project_id")
+    private Long projectId;
 
     protected AreaTag() {
     }
@@ -25,11 +28,20 @@ public class AreaTag {
         this.name = name;
     }
 
+    public AreaTag(String name, Long projectId) {
+        this.name = name;
+        this.projectId = projectId;
+    }
+
     public Long getId() {
         return id;
     }
 
     public String getName() {
         return name;
+    }
+
+    public Long getProjectId() {
+        return projectId;
     }
 }

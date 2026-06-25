@@ -12,6 +12,14 @@ public record TestPlanRequest(
         @NotNull TestPlanStatus status,
         @Size(max = 100) String assignee,
         LocalDate startDate,
-        LocalDate endDate
-) {
-}
+        LocalDate endDate,
+        // #5 확장 필드
+        String riskItems,
+        String scope,
+        Integer teamSize,
+        String teamMembers,
+        String qualityCriteria,
+        @Size(max = 200) String budget,
+        String planNotes,
+        Long projectId
+) {}

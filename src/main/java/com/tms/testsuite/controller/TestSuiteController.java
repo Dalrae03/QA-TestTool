@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/** 플랜 소속 스위트 — 기존 API 유지 */
 @RestController
 @RequestMapping("/api/test-plans/{planId}/suites")
 public class TestSuiteController {
@@ -37,21 +38,16 @@ public class TestSuiteController {
     }
 
     @PostMapping
-    public ResponseEntity<TestSuiteResponse> createSuite(
-            @PathVariable Long planId,
-            @Valid @RequestBody TestSuiteRequest request
-    ) {
+    public ResponseEntity<TestSuiteResponse> createSuite(@PathVariable Long planId,
+                                                          @Valid @RequestBody TestSuiteRequest request) {
         TestSuiteResponse response = testSuiteService.createSuite(planId, request);
         return ResponseEntity.created(URI.create("/api/test-plans/" + planId + "/suites/" + response.id()))
                 .body(response);
     }
 
     @PutMapping("/{suiteId}")
-    public TestSuiteResponse updateSuite(
-            @PathVariable Long planId,
-            @PathVariable Long suiteId,
-            @Valid @RequestBody TestSuiteRequest request
-    ) {
+    public TestSuiteResponse updateSuite(@PathVariable Long planId, @PathVariable Long suiteId,
+                                          @Valid @RequestBody TestSuiteRequest request) {
         return testSuiteService.updateSuite(planId, suiteId, request);
     }
 

@@ -7,6 +7,7 @@ import java.util.List;
 public record TestSuiteRequest(
         @NotBlank @Size(max = 200) String name,
         String description,
-        List<Long> testCaseIds
+        List<Long> testCaseIds,
+        Long projectId
 ) {
 }

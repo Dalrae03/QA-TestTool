@@ -147,6 +147,7 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
+        testCase.setProjectId(request.projectId());
         TestCase saved = testCaseRepository.save(testCase);
         auditLogService.record(AuditLogService.TEST_CASE, saved.getId(), AuditAction.CREATED, "testCase", null, saved.getTitle());
         createVersionSnapshot(saved, "최초 생성");
@@ -180,6 +181,7 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
+        if (request.projectId() != null) testCase.setProjectId(request.projectId());
         recordTestCaseUpdates(id, before, TestCaseAuditSnapshot.from(testCase));
         createVersionSnapshot(testCase, "테스트케이스 수정");
         return TestCaseResponse.from(testCase);

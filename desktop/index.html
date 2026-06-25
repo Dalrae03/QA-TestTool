@@ -282,24 +282,6 @@
               <div class="dt-id" id="dtCaseId">새 테스트케이스</div>
               <div class="dt-title" id="editorTitle">테스트케이스 작성</div>
               <div class="dt-pills" id="dtPills"></div>
-              <!-- 흐름 단계 표시 -->
-              <div class="flow-panel" style="margin-top:10px">
-                <div class="flow-steps">
-                  <div class="flow-step" data-stage="draft">
-                    <span class="flow-step-number">1</span>
-                    <div><strong>초안 작성</strong><p>새 테스트케이스를 작성합니다.</p></div>
-                  </div>
-                  <div class="flow-step" data-stage="saved">
-                    <span class="flow-step-number">2</span>
-                    <div><strong>저장 완료</strong><p>저장 후 복제, 수정이 가능합니다.</p></div>
-                  </div>
-                  <div class="flow-step" data-stage="run">
-                    <span class="flow-step-number">3</span>
-                    <div><strong>실행 기록</strong><p>실행 결과를 기록합니다.</p></div>
-                  </div>
-                </div>
-                <p id="flowHint" class="flow-hint">초안을 작성한 뒤 저장하면 바로 실행 결과를 기록할 수 있습니다.</p>
-              </div>
               <div class="dt-actions">
                 <button id="duplicateButton" class="btn btn-sm" disabled>복제</button>
                 <button id="deleteButton" class="btn btn-sm btn-danger" disabled>삭제</button>
@@ -576,37 +558,23 @@
                   <div style="font-size:13px;font-weight:600" id="runPanelCaseTitle">테스트케이스를 선택하세요</div>
                 </div>
               </div>
-              <div id="runState" class="state-banner">저장된 테스트케이스를 선택하면 실행 결과를 기록할 수 있습니다.</div>
-              <form id="testRunForm">
-                <div class="run-stats run-stats-three" id="runStats" style="display:none">
-                  <div class="rs"><div class="rs-n" id="rsPass" style="color:var(--c-pass)">0</div><div class="rs-l">통과</div></div>
-                  <div class="rs"><div class="rs-n" id="rsFail" style="color:var(--c-hi)">0</div><div class="rs-l">실패</div></div>
-                  <div class="rs"><div class="rs-n" id="rsBlock" style="color:var(--text-muted)">0</div><div class="rs-l">차단</div></div>
-                </div>
-                <div class="run-form-card">
-                  <div style="font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:10px">새 실행 결과 입력</div>
-                  <div class="run-field">
-                    <label>실행 결과 *</label>
-                    <select id="runStatus" required class="form-input">
-                      <option value="PASSED">PASS — 통과</option>
-                      <option value="FAILED">FAIL — 실패</option>
-                      <option value="BLOCKED">BLOCKED — 차단</option>
-                    </select>
-                  </div>
-                  <div class="run-field">
-                    <label>실제 결과 *</label>
-                    <textarea id="actualResult" required class="form-input" rows="3" placeholder="실행 결과를 기록합니다."></textarea>
-                  </div>
-                  <div class="run-field">
-                    <label>실행 메모</label>
-                    <textarea id="runNotes" class="form-input" rows="2" placeholder="브라우저, 버전, 추가 메모…"></textarea>
-                  </div>
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
-                    <p id="runMode" style="font-size:11px;color:var(--text-muted)">실행 결과를 저장하면 이력에 추가됩니다.</p>
-                    <button id="saveRunButton" type="submit" class="btn btn-pri btn-sm" disabled>저장</button>
-                  </div>
-                </div>
+              <div id="runState" class="state-banner">저장된 테스트케이스를 선택하면 실행 이력을 볼 수 있습니다.</div>
+              <form id="testRunForm" hidden style="display:none!important">
+                <select id="runStatus"><option value="PASSED">PASSED</option></select>
+                <textarea id="actualResult"></textarea>
+                <textarea id="runNotes"></textarea>
+                <button id="saveRunButton" type="submit"></button>
               </form>
+              <div class="run-stats run-stats-four" id="runStats" style="display:none">
+                <div class="rs"><div class="rs-n" id="rsPass" style="color:var(--c-pass)">0</div><div class="rs-l">통과</div></div>
+                <div class="rs"><div class="rs-n" id="rsFail" style="color:var(--c-hi)">0</div><div class="rs-l">실패</div></div>
+                <div class="rs"><div class="rs-n" id="rsBlock" style="color:var(--text-muted)">0</div><div class="rs-l">차단</div></div>
+                <div class="rs"><div class="rs-n" id="rsRetest" style="color:#b45309">0</div><div class="rs-l">재테스트</div></div>
+              </div>
+              <div class="run-history-note">
+                실행 결과는 더 이상 여기서 직접 기록하지 않습니다. <b>테스트런</b>에서 이 케이스를 실행하면 그 결과가 버전과 함께 아래 이력에 자동으로 쌓입니다.
+                <button type="button" class="btn btn-sm" onclick="switchView('runs')">테스트런으로 이동 →</button>
+              </div>
               <ul id="testRunList" class="run-list"></ul>
             </section>
           </div>
@@ -693,6 +661,7 @@
             <div class="run-detail-meta" id="runDetailMeta"></div>
           </div>
           <div class="run-detail-actions">
+            <span id="runPlanBadgeWrap"></span>
             <span class="badge" id="runDetailStatus"></span>
             <button type="button" class="btn btn-sm" id="runCompleteButton">완료 처리</button>
             <button type="button" class="btn btn-sm btn-danger" id="runDeleteButton">삭제</button>
@@ -700,10 +669,6 @@
         </div>
         <!-- 플랜 요약 (#10) -->
         <div id="runPlanSummary" class="run-plan-summary" hidden></div>
-        <div class="suite-run-progress" id="runDetailProgress">
-          <div class="suite-run-bar" id="runDetailBar"></div>
-          <div id="runDetailStats" class="suite-run-stats"></div>
-        </div>
         <div id="runDetailReport" class="run-report" hidden></div>
         <div id="runDetailItems" class="run-detail-items"></div>
       </div>
@@ -713,11 +678,25 @@
 
 <!-- 새 테스트런 모달 -->
 <div id="newRunModal" class="modal-overlay" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="newRunModalTitle">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="newRunModalTitle" style="width:560px;max-height:85vh;overflow-y:auto">
     <div class="modal-head"><div class="modal-title" id="newRunModalTitle">새 테스트런</div><button type="button" class="modal-close" id="newRunCloseButton" aria-label="닫기">×</button></div>
     <label class="form-field"><span>테스트 플랜 (선택)</span><select id="runPlanSelect" class="form-input"><option value="">-- 플랜 없이 생성 --</option></select></label>
-    <label class="form-field"><span>스위트 *</span><select id="runSuiteSelect" class="form-input"><option value="">스위트를 선택하세요</option></select></label>
-    <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 스위트 이름으로 생성"></label>
+    <div class="run-source-toggle">
+      <button type="button" class="run-source-tab active" id="runSourceTabSuite" data-mode="suite">스위트에서 만들기</button>
+      <button type="button" class="run-source-tab" id="runSourceTabCases" data-mode="cases">테스트케이스 직접 선택</button>
+    </div>
+    <label class="form-field" id="runSuiteField"><span>스위트 *</span><select id="runSuiteSelect" class="form-input"><option value="">스위트를 선택하세요</option></select></label>
+    <div class="form-field" id="runCasesField" hidden>
+      <span>테스트케이스 선택</span>
+      <div class="tc-picker-filter">
+        <input id="runTcPickerSearch" class="form-input" placeholder="🔍 제목 검색..." oninput="filterRunTcPicker()">
+        <select id="runTcPickerPriority" class="form-input" onchange="filterRunTcPicker()"><option value="">우선순위 전체</option><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select>
+        <select id="runTcPickerStatus" class="form-input" onchange="filterRunTcPicker()"><option value="">상태 전체</option><option value="DRAFT">Draft</option><option value="READY">Ready</option><option value="COMPLETED">Completed</option></select>
+      </div>
+      <div id="runTcPickerTree" class="tc-picker-tree"></div>
+      <div id="runTcPickerSelected" class="tc-picker-selected-bar">선택된 TC: <strong id="runTcPickerCount">0</strong>건</div>
+    </div>
+    <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 자동으로 생성"></label>
     <label class="form-field"><span>담당자</span><select id="runAssigneeInput" class="form-input"><option value="">담당자 없음</option></select></label>
     <div class="plan-form-actions">
       <button type="button" class="btn btn-sm" id="newRunCancelButton">취소</button>
@@ -896,15 +875,16 @@
   </div>
 </div>
 
-<!-- ══ 실패 사유 모달 (#9) ══ -->
+<!-- ══ 실패/차단/재테스트 사유 모달 (#9) ══ -->
 <div id="failureReasonModal" class="failure-modal-overlay" style="display:none">
   <div class="failure-modal">
-    <h3>🔴 실패 사유 입력</h3>
-    <p style="font-size:12px;color:var(--text-muted)">실패 이유 또는 Jira 버그 티켓 URL을 입력하세요.</p>
+    <h3 id="failureReasonTitle">🔴 실패 사유 입력</h3>
+    <p style="font-size:12px;color:var(--text-muted)" id="failureReasonDesc">실패 이유 또는 Jira 버그 티켓 URL을 입력하세요.</p>
     <textarea id="failureReasonInput" class="form-input" rows="4" placeholder="예) https://jira.company.com/browse/BUG-123&#10;또는 실패 원인을 간략히 설명"></textarea>
+    <p id="failureReasonError" class="failure-modal-error" hidden>사유를 입력해야 기록할 수 있습니다.</p>
     <div class="failure-modal-actions">
       <button class="btn btn-sm" onclick="cancelFailureReason()">취소</button>
-      <button class="btn btn-sm btn-danger" onclick="confirmFailureReason()">실패로 기록</button>
+      <button class="btn btn-sm btn-danger" id="failureReasonConfirmBtn" onclick="confirmFailureReason()">실패로 기록</button>
     </div>
   </div>
 </div>

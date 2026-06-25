@@ -112,6 +112,27 @@ async function proxyApiRequest(_event, options) {
   }
 }
 
+// 엑셀 임포트: 파일 경로를 받아 FormData 로 백엔드에 POST
+async function uploadExcel(_event, options) {
+  try {
+    const url = parseHttpUrl(options?.url);
+    const filePath = options?.filePath;
+    if (!filePath) return errorResponse(400, "filePath가 필요합니다.");
+    const stat = fs.statSync(filePath);
+    if (stat.size > 50 * 1024 * 1024) return errorResponse(413, "50MB 이하 파일만 업로드할 수 있습니다.");
+    const buffer = fs.readFileSync(filePath);
+    const fileName = path.basename(filePath);
+    const formData = new FormData();
+    formData.append("file", new Blob([buffer]), fileName);
+    if (options?.projectId) formData.append("projectId", String(options.projectId));
+    const response = await fetchWithTimeout(url, { method: "POST", body: formData });
+    const data = await readResponse(response);
+    return { ok: response.ok, status: response.status, data };
+  } catch (error) {
+    return errorResponse(503, `엑셀 업로드 실패: ${error.message}`);
+  }
+}
+
 // 첨부파일: 멀티파트 업로드 — 네이티브 파일 선택 후 FormData 로 백엔드에 POST
 async function uploadAttachment(_event, options) {
   try {
@@ -177,6 +198,7 @@ app.whenReady().then(() => {
     defaultApiBaseUrl: "http://localhost:8080"
   }));
   ipcMain.handle("desktop:request", proxyApiRequest);
+  ipcMain.handle("desktop:upload-excel", uploadExcel);
   ipcMain.handle("desktop:upload-attachment", uploadAttachment);
   ipcMain.handle("desktop:download-attachment", downloadAttachment);
 

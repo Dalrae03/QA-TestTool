@@ -53,6 +53,10 @@ public class TestCaseSpecification {
         return (root, query, cb) -> cb.equal(root.get("folder").get("id"), folderId);
     }
 
+    public static Specification<TestCase> hasProjectId(Long projectId) {
+        return (root, query, cb) -> cb.equal(root.get("projectId"), projectId);
+    }
+
     public static Specification<TestCase> containsKeyword(String keyword) {
         return (root, query, cb) -> {
             String pattern = "%" + keyword.toLowerCase() + "%";

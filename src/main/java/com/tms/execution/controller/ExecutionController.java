@@ -3,6 +3,8 @@ package com.tms.execution.controller;
 import com.tms.execution.dto.CreateExecutionRequest;
 import com.tms.execution.dto.ExecutionResponse;
 import com.tms.execution.dto.RecordResultRequest;
+import com.tms.execution.dto.TestCaseExecutionHistoryResponse;
+import com.tms.execution.dto.UpdateExecutionPlanRequest;
 import com.tms.execution.dto.UpdateExecutionRequest;
 import com.tms.execution.service.ExecutionService;
 import jakarta.validation.Valid;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -30,8 +33,8 @@ public class ExecutionController {
     }
 
     @GetMapping
-    public List<ExecutionResponse> getExecutions() {
-        return executionService.getExecutions();
+    public List<ExecutionResponse> getExecutions(@RequestParam(required = false) Long projectId) {
+        return executionService.getExecutions(projectId);
     }
 
     @GetMapping("/{id}")
@@ -48,6 +51,16 @@ public class ExecutionController {
     @PutMapping("/{id}")
     public ExecutionResponse updateExecution(@PathVariable Long id, @Valid @RequestBody UpdateExecutionRequest request) {
         return executionService.updateExecution(id, request);
+    }
+
+    @GetMapping("/items/by-test-case/{testCaseId}")
+    public List<TestCaseExecutionHistoryResponse> getExecutionHistory(@PathVariable Long testCaseId) {
+        return executionService.getExecutionHistory(testCaseId);
+    }
+
+    @PatchMapping("/{id}/plan")
+    public ExecutionResponse updateExecutionPlan(@PathVariable Long id, @RequestBody UpdateExecutionPlanRequest request) {
+        return executionService.updateExecutionPlan(id, request);
     }
 
     @PatchMapping("/{id}/items/{itemId}")

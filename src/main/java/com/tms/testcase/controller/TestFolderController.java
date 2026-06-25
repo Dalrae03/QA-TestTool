@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,8 +28,8 @@ public class TestFolderController {
     }
 
     @GetMapping
-    public ResponseEntity<List<TestFolderResponse>> getRootFolders() {
-        return ResponseEntity.ok(testFolderService.getRootFolders());
+    public ResponseEntity<List<TestFolderResponse>> getRootFolders(@RequestParam(required = false) Long projectId) {
+        return ResponseEntity.ok(testFolderService.getRootFolders(projectId));
     }
 
     @GetMapping("/{id}")

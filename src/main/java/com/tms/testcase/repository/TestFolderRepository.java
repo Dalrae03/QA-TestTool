@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TestFolderRepository extends JpaRepository<TestFolder, Long> {
     List<TestFolder> findAllByParentIsNullOrderByNameAsc();
+    List<TestFolder> findAllByProjectIdAndParentIsNullOrderByNameAsc(Long projectId);
     List<TestFolder> findAllByParentIdOrderByNameAsc(Long parentId);
     boolean existsByParentId(Long parentId);
 }

@@ -12,4 +12,5 @@ public interface TestCaseRepository extends JpaRepository<TestCase, Long>, JpaSp
     List<TestCase> findAllByFolderIdOrderByCreatedAtAsc(Long folderId);
     List<TestCase> findAllByFolderIsNullOrderByCreatedAtAsc();
     boolean existsByFolderId(Long folderId);
+    List<TestCase> findAllByProjectId(Long projectId);
 }

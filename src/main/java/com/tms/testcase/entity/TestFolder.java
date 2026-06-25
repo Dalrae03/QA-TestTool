@@ -37,6 +37,9 @@ public class TestFolder {
     @OrderBy("name ASC")
     private List<TestFolder> children = new ArrayList<>();
 
+    @Column(name = "project_id")
+    private Long projectId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -52,6 +55,12 @@ public class TestFolder {
         this.parent = parent;
     }
 
+    public TestFolder(String name, TestFolder parent, Long projectId) {
+        this.name = name;
+        this.parent = parent;
+        this.projectId = projectId;
+    }
+
     public void rename(String name) {
         this.name = name;
     }
@@ -60,6 +69,8 @@ public class TestFolder {
         this.parent = newParent;
     }
 
+    public Long getProjectId() { return projectId; }
+    public void setProjectId(Long projectId) { this.projectId = projectId; }
     public Long getId() { return id; }
     public String getName() { return name; }
     public TestFolder getParent() { return parent; }

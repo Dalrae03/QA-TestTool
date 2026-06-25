@@ -32,8 +32,14 @@ public class Execution {
     @Lob
     private String description;
 
+    @Column(name = "project_id")
+    private Long projectId;
+
     // 출처 스냅샷 — 플랜/스위트가 삭제돼도 런은 남는다 (FK 미사용).
     private Long testPlanId;
+
+    @Column(length = 200)
+    private String planName;
 
     private Long testSuiteId;
 
@@ -63,10 +69,12 @@ public class Execution {
     protected Execution() {
     }
 
-    public Execution(String name, String description, Long testPlanId, Long testSuiteId, String suiteName, String assignee) {
+    public Execution(String name, String description, Long projectId, Long testPlanId, String planName, Long testSuiteId, String suiteName, String assignee) {
         this.name = name;
         this.description = description;
+        this.projectId = projectId;
         this.testPlanId = testPlanId;
+        this.planName = planName;
         this.testSuiteId = testSuiteId;
         this.suiteName = suiteName;
         this.assignee = assignee;
@@ -75,6 +83,15 @@ public class Execution {
 
     public void addItem(Long testCaseId, String caseTitle) {
         this.items.add(new ExecutionItem(this, testCaseId, caseTitle));
+    }
+
+    public void addItem(Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel) {
+        this.items.add(new ExecutionItem(this, testCaseId, caseTitle, versionNumber, versionLabel));
+    }
+
+    public void updatePlan(Long testPlanId, String planName) {
+        this.testPlanId = testPlanId;
+        this.planName = planName;
     }
 
     public void update(String name, String description, ExecutionStatus status, String assignee) {
@@ -96,7 +113,9 @@ public class Execution {
     public Long getId() { return id; }
     public String getName() { return name; }
     public String getDescription() { return description; }
+    public Long getProjectId() { return projectId; }
     public Long getTestPlanId() { return testPlanId; }
+    public String getPlanName() { return planName; }
     public Long getTestSuiteId() { return testSuiteId; }
     public String getSuiteName() { return suiteName; }
     public ExecutionStatus getStatus() { return status; }

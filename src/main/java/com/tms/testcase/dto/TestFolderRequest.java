@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 
 public record TestFolderRequest(
         @NotBlank @Size(max = 200) String name,
-        Long parentId
+        Long parentId,
+        Long projectId
 ) {
 }

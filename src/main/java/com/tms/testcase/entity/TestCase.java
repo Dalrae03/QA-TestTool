@@ -112,6 +112,9 @@ public class TestCase {
     )
     private List<Defect> defects = new ArrayList<>();
 
+    @Column(name = "project_id")
+    private Long projectId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -391,6 +394,9 @@ public class TestCase {
     public void unlinkDefect(Defect defect) {
         defects.remove(defect);
     }
+
+    public Long getProjectId() { return projectId; }
+    public void setProjectId(Long projectId) { this.projectId = projectId; }
 
     public Long getId() {
         return id;

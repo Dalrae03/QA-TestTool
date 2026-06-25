@@ -20,8 +20,8 @@ import com.tms.testcase.entity.TestCasePriority;
 import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.repository.TestCaseRepository;
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testrun.dto.CreateTestRunRequest;
-import com.tms.testrun.entity.TestRunStatus;
 import com.tms.testrun.repository.TestRunRepository;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -190,7 +190,7 @@ class AttachmentControllerIntegrationTest {
                         .post("/api/testcases/{id}/runs", testCaseId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "실행 결과", null, null
+                                ResultStatus.PASSED, "실행 결과", null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andReturn();

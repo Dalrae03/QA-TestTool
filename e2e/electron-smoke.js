@@ -164,29 +164,12 @@ async function main() {
     assert.deepEqual(await page.locator("#folderTree .folder-label").allTextContents(), [uniqueFolder]);
     await page.fill("#folderSearchInput", "");
 
+    // 실행 결과는 더 이상 테스트케이스 상세에서 직접 기록하지 않는다 — 이 탭은 테스트런에서 기록된
+    // 이력만 읽기 전용으로 보여주고, 실제 기록은 "테스트런" 화면에서 이뤄진다(아래 #navRuns 플로우).
     await page.click("#tctab-runs");
-    await page.fill("#actualResult", "Initial run result");
-    await page.fill("#runNotes", "Initial run note");
-    await page.click("#saveRunButton");
-    await page.waitForSelector("#testRunList .run-item");
-    assert.match(await page.locator("#testRunList .run-item").textContent(), /PASS/);
-
-    await page.click("#testRunList .run-info");
-    await page.selectOption("#testRunList .ri-status", "FAILED");
-    await page.fill("#testRunList .ri-actual", "Updated run result");
-    await page.fill("#testRunList .ri-notes", "Updated run note");
-    await page.click("#testRunList .ri-save");
-    await page.waitForFunction(() => document.querySelector("#testRunList .run-item")?.textContent.includes("Updated run result"));
-    assert.match(await page.locator("#testRunList .run-item").textContent(), /FAIL/);
-
-    await page.selectOption("#runStatus", "BLOCKED");
-    await page.fill("#actualResult", "Dependency server is unavailable");
-    await page.fill("#runNotes", "Blocked by external dependency");
-    await page.click("#saveRunButton");
-    await page.waitForFunction(() => document.querySelectorAll("#testRunList .run-item").length === 2);
-    assert.match(await page.locator("#testRunList").textContent(), /BLOCKED/);
-    assert.equal(await page.locator("#rsFail").textContent(), "1");
-    assert.equal(await page.locator("#rsBlock").textContent(), "1");
+    await page.waitForSelector(".run-history-note");
+    assert.match(await page.locator(".run-history-note").textContent(), /테스트런/);
+    assert.equal(await page.locator("#testRunForm").isVisible(), false);
 
     await page.click("#navPlans");
     await page.click("#newPlanButton");
@@ -199,30 +182,21 @@ async function main() {
       uniquePlan
     );
 
-    await page.click("#newSuiteButton");
-    await page.fill("#suiteName", uniqueSuite);
-    await page.fill("#suiteDescription", "E2E authentication suite");
-    await page.locator("#suiteCasePicker .suite-case-option", { hasText: updatedTitle }).locator('input[type="checkbox"]').check();
-    await page.click('#suiteForm button[type="submit"]');
+    // 스위트는 더 이상 플랜 화면에서 만들지 않는다 — 테스트런 화면의 "스위트 관리" 모달에서 관리한다.
+    await page.click("#navRuns");
+    await page.click("#manageSuitesButton");
+    await page.waitForSelector("#suiteManagerModal:not([hidden])");
+    await page.click("text=＋ 새 스위트");
+    await page.fill("#smSuiteName", uniqueSuite);
+    await page.fill("#smSuiteDesc", "E2E authentication suite");
+    await page.locator("#tcPickerTree .tc-picker-tc", { hasText: updatedTitle }).locator('input[type="checkbox"]').check();
+    await page.click('button[onclick="saveSuiteFromManager()"]');
     await page.waitForFunction(
-      (suiteName) => Array.from(document.querySelectorAll("#suiteList .tc-node-label")).some((node) => node.textContent === suiteName),
+      (suiteName) => Array.from(document.querySelectorAll("#suiteManagerList .suite-manager-item")).some((node) => node.textContent.includes(suiteName)),
       uniqueSuite
     );
-    assert.match(await page.locator("#suiteList .tc-node", { hasText: uniqueSuite }).textContent(), /1건/);
-
-    // 스위트 빠른 실행: 편집 화면에서 실행 버튼으로 진입해 케이스를 통과 처리
-    await page.click("#suiteList .tc-node", { hasText: uniqueSuite });
-    await page.waitForSelector("#suiteForm:not([hidden])");
-    await page.click("#suiteRunFromEditButton");
-    await page.waitForSelector("#suiteRunPanel:not([hidden])");
-    await page.waitForSelector("#suiteRunCases .suite-run-case");
-    assert.equal(await page.locator("#suiteRunCases .suite-run-case").count(), 1);
-    await page.click('#suiteRunCases .suite-run-btn[data-s="PASSED"]');
-    await page.waitForFunction(
-      () => document.querySelector("#suiteRunStats .suite-run-prog")?.textContent.includes("1/1")
-    );
-    assert.equal(await page.locator("#suiteRunCases .suite-run-badge.passed").count(), 1);
-    assert.equal(await page.locator("#suiteRunBar .bar-seg.pass").evaluate((el) => el.style.width), "100%");
+    assert.match(await page.locator("#suiteManagerList .suite-manager-item", { hasText: uniqueSuite }).textContent(), /1개 TC/);
+    await page.click("#suiteManagerModal .modal-close");
 
     // 테스트런(실행 사이클): 스위트로부터 런 생성 → 케이스 결과 기록 → 완료 처리
     await page.click("#navRuns");
@@ -241,10 +215,10 @@ async function main() {
 
     await page.click('#runDetailItems .suite-run-btn[data-s="PASSED"]');
     await page.waitForFunction(
-      () => document.querySelector("#runDetailStats .suite-run-prog")?.textContent.includes("1/1")
+      () => document.querySelector("#runDetailReport .run-report-num")?.textContent === "1/1"
     );
     assert.equal(await page.locator("#runDetailItems .suite-run-badge.passed").count(), 1);
-    assert.equal(await page.locator("#runDetailBar .bar-seg.pass").evaluate((el) => el.style.width), "100%");
+    assert.match(await page.locator("#runDetailReport .suite-run-chip.pass").textContent(), /통과 1/);
 
     await page.click("#runCompleteButton");
     await page.waitForFunction(
@@ -277,8 +251,7 @@ async function main() {
       deletedTestCase: disposableTitle,
       createdTag: uniqueTag,
       folderSearch: uniqueFolder,
-      runUpdatedTo: "FAIL",
-      blockedRunRecorded: true,
+      runHistoryNoteShown: true,
       createdPlan: uniquePlan,
       createdSuite: uniqueSuite,
       testRunCompleted: true,
