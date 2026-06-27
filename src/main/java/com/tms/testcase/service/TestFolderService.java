@@ -23,11 +23,11 @@ public class TestFolderService {
         this.testCaseRepository = testCaseRepository;
     }
 
-    public List<TestFolderResponse> getRootFolders() {
-        return testFolderRepository.findAllByParentIsNullOrderByNameAsc()
-                .stream()
-                .map(TestFolderResponse::from)
-                .toList();
+    public List<TestFolderResponse> getRootFolders(Long projectId) {
+        List<TestFolder> roots = projectId != null
+                ? testFolderRepository.findAllByProjectIdAndParentIsNullOrderByNameAsc(projectId)
+                : testFolderRepository.findAllByParentIsNullOrderByNameAsc();
+        return roots.stream().map(TestFolderResponse::from).toList();
     }
 
     public TestFolderResponse getFolder(Long id) {
@@ -37,7 +37,7 @@ public class TestFolderService {
     @Transactional
     public TestFolderResponse createFolder(TestFolderRequest request) {
         TestFolder parent = loadParent(request.parentId());
-        TestFolder folder = new TestFolder(request.name(), parent);
+        TestFolder folder = new TestFolder(request.name(), parent, request.projectId());
         return TestFolderResponse.from(testFolderRepository.save(folder));
     }
 

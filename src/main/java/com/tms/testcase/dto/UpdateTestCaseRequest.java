@@ -52,7 +52,9 @@ public record UpdateTestCaseRequest(
 
         @Size(max = 50) String version,
 
-        Long folderId
+        Long folderId,
+
+        Long projectId
 ) {
     public UpdateTestCaseRequest(
             TestCaseType type, TestCasePriority priority, TestCaseStatus status, String title,
@@ -60,7 +62,7 @@ public record UpdateTestCaseRequest(
             TestCaseBrowser browser, TestCaseDevice device, List<Long> areaTagIds
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, null, null, null, null, null);
+                os, browser, device, areaTagIds, null, null, null, null, null, null);
     }
 
     public UpdateTestCaseRequest(
@@ -70,7 +72,7 @@ public record UpdateTestCaseRequest(
             Long serverEnvironmentId
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, serverEnvironmentId, null, null, null, null);
+                os, browser, device, areaTagIds, serverEnvironmentId, null, null, null, null, null);
     }
 
     public UpdateTestCaseRequest(
@@ -80,6 +82,6 @@ public record UpdateTestCaseRequest(
             Long serverEnvironmentId, Long testConfigurationId
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, serverEnvironmentId, testConfigurationId, null, null, null);
+                os, browser, device, areaTagIds, serverEnvironmentId, testConfigurationId, null, null, null, null);
     }
 }

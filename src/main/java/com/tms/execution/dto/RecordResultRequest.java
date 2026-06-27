@@ -5,6 +5,6 @@ import jakarta.validation.constraints.NotNull;
 
 public record RecordResultRequest(
         @NotNull ResultStatus status,
-        String comment
-) {
-}
+        String comment,
+        String failureReason
+) {}

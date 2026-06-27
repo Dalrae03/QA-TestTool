@@ -97,9 +97,11 @@ public class TestCaseService {
             TestCaseDevice device,
             Long areaTagId,
             String keyword,
-            Long folderId
+            Long folderId,
+            Long projectId
     ) {
         Specification<TestCase> spec = (root, query, cb) -> cb.conjunction();
+        if (projectId != null) spec = spec.and(TestCaseSpecification.hasProjectId(projectId));
         if (type != null) spec = spec.and(TestCaseSpecification.hasType(type));
         if (priority != null) spec = spec.and(TestCaseSpecification.hasPriority(priority));
         if (status != null) spec = spec.and(TestCaseSpecification.hasStatus(status));
@@ -145,6 +147,7 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
+        testCase.setProjectId(request.projectId());
         TestCase saved = testCaseRepository.save(testCase);
         auditLogService.record(AuditLogService.TEST_CASE, saved.getId(), AuditAction.CREATED, "testCase", null, saved.getTitle());
         createVersionSnapshot(saved, "최초 생성");
@@ -178,6 +181,7 @@ public class TestCaseService {
                 request.version()
         );
         testCase.moveToFolder(folder);
+        if (request.projectId() != null) testCase.setProjectId(request.projectId());
         recordTestCaseUpdates(id, before, TestCaseAuditSnapshot.from(testCase));
         createVersionSnapshot(testCase, "테스트케이스 수정");
         return TestCaseResponse.from(testCase);

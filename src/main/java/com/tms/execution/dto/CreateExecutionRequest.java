@@ -1,10 +1,13 @@
 package com.tms.execution.dto;
 
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 public record CreateExecutionRequest(
-        @NotNull Long suiteId,
+        Long suiteId,
+        List<Long> testCaseIds,
+        Long testPlanId,
+        Long projectId,
         @Size(max = 200) String name,
         String description,
         @Size(max = 100) String assignee

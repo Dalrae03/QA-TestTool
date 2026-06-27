@@ -48,10 +48,11 @@ public class TestCaseController {
             @RequestParam(required = false) TestCaseDevice device,
             @RequestParam(required = false) Long areaTagId,
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) Long folderId
+            @RequestParam(required = false) Long folderId,
+            @RequestParam(required = false) Long projectId
     ) {
         return ResponseEntity.ok(
-                testCaseService.getAllTestCases(type, priority, status, os, browser, device, areaTagId, keyword, folderId)
+                testCaseService.getAllTestCases(type, priority, status, os, browser, device, areaTagId, keyword, folderId, projectId)
         );
     }
 

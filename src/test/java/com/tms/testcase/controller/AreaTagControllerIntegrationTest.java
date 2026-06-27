@@ -50,7 +50,7 @@ class AreaTagControllerIntegrationTest {
 
         mockMvc.perform(post("/api/area-tags")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateAreaTagRequest(" smoke "))))
+                        .content(objectMapper.writeValueAsString(new CreateAreaTagRequest(" smoke ", null))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("이미 존재하는 태그입니다: smoke"));
     }

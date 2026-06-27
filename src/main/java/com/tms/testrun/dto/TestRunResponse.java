@@ -1,16 +1,17 @@
 package com.tms.testrun.dto;
 
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testrun.entity.TestRun;
-import com.tms.testrun.entity.TestRunStatus;
 import java.time.LocalDateTime;
 
 public record TestRunResponse(
         Long id,
         Long testCaseId,
-        TestRunStatus status,
+        ResultStatus status,
         String actualResult,
         String notes,
         String assignee,
+        String failureReason,
         LocalDateTime executedAt
 ) {
     public static TestRunResponse from(TestRun testRun) {
@@ -21,6 +22,7 @@ public record TestRunResponse(
                 testRun.getActualResult(),
                 testRun.getNotes(),
                 testRun.getAssignee(),
+                testRun.getFailureReason(),
                 testRun.getExecutedAt()
         );
     }

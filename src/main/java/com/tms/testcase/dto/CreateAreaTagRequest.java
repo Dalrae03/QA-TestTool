@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 public record CreateAreaTagRequest(
         @NotBlank
         @Size(max = 50)
-        String name
+        String name,
+        Long projectId
 ) {
 }

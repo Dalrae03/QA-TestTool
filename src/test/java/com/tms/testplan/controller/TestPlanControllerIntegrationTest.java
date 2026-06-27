@@ -57,7 +57,8 @@ class TestPlanControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
                                 "Release 1.0", "Regression plan", TestPlanStatus.ACTIVE,
-                                null, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30)
+                                null, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),
+                                null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-plans/\\d+")))
@@ -70,7 +71,7 @@ class TestPlanControllerIntegrationTest {
         MvcResult suiteResult = mockMvc.perform(post("/api/test-plans/{planId}/suites", planId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestSuiteRequest(
-                                "Authentication", "Login scenarios", List.of(second.getId(), first.getId(), second.getId())
+                                "Authentication", "Login scenarios", List.of(second.getId(), first.getId(), second.getId()), null
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.testPlanId").value(planId))
@@ -88,7 +89,7 @@ class TestPlanControllerIntegrationTest {
         mockMvc.perform(put("/api/test-plans/{planId}/suites/{suiteId}", planId, suiteId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestSuiteRequest(
-                                "Authentication smoke", null, List.of(first.getId())
+                                "Authentication smoke", null, List.of(first.getId()), null
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Authentication smoke"))
@@ -108,7 +109,8 @@ class TestPlanControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
                                 "Invalid plan", null, TestPlanStatus.DRAFT,
-                                null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 6, 1)
+                                null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 6, 1),
+                                null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("종료일은 시작일보다 빠를 수 없습니다."));
@@ -116,7 +118,7 @@ class TestPlanControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Valid plan", null, TestPlanStatus.DRAFT, null, null, null
+                                "Valid plan", null, TestPlanStatus.DRAFT, null, null, null, null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();
@@ -124,7 +126,7 @@ class TestPlanControllerIntegrationTest {
         mockMvc.perform(post("/api/test-plans/{planId}/suites", planId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestSuiteRequest(
-                                "Broken suite", null, List.of(9999L)
+                                "Broken suite", null, List.of(9999L), null
                         ))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("존재하지 않는 테스트케이스 ID가 포함되어 있습니다: [9999]"));
@@ -136,14 +138,14 @@ class TestPlanControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Cleanup plan", null, TestPlanStatus.DRAFT, null, null, null
+                                "Cleanup plan", null, TestPlanStatus.DRAFT, null, null, null, null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();
         MvcResult suiteResult = mockMvc.perform(post("/api/test-plans/{planId}/suites", planId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestSuiteRequest(
-                                "Cleanup suite", null, List.of(testCase.getId())
+                                "Cleanup suite", null, List.of(testCase.getId()), null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long suiteId = objectMapper.readTree(suiteResult.getResponse().getContentAsString()).get("id").asLong();

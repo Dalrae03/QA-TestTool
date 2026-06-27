@@ -247,6 +247,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 프로젝트 — 목 서버는 단일 테넌트로 동작하므로 빈 목록을 돌려준다(상단 프로젝트 셀렉터는 "프로젝트 없음" 상태가 됨).
+  if (req.method === "GET" && url.pathname === "/api/projects") {
+    json(res, 200, []);
+    return;
+  }
+
+  // 테스트케이스 1건의 실행 이력(테스트런을 통해 기록된 결과) — 아직 실행한 적 없으면 빈 배열.
+  const tcRunItemsMatch = url.pathname.match(/^\/api\/test-runs\/items\/by-test-case\/(\d+)$/);
+  if (req.method === "GET" && tcRunItemsMatch) {
+    json(res, 200, []);
+    return;
+  }
+
+  // 대시보드 통계 — 화면이 깨지지 않을 정도의 최소 형태로 응답한다.
+  if (req.method === "GET" && url.pathname === "/api/dashboard/stats") {
+    const byStatus = {}, byPriority = {}, byAreaTag = {};
+    testCases.forEach((tc) => {
+      byStatus[tc.status] = (byStatus[tc.status] || 0) + 1;
+      byPriority[tc.priority] = (byPriority[tc.priority] || 0) + 1;
+      tc.areaTags.forEach((tag) => { byAreaTag[tag.name] = (byAreaTag[tag.name] || 0) + 1; });
+    });
+    json(res, 200, {
+      totalTestCases: testCases.length,
+      testCasesByStatus: byStatus,
+      testCasesByPriority: byPriority,
+      testCasesByAreaTag: byAreaTag,
+      totalExecutions: executions.length,
+      activeExecutions: executions.filter((e) => e.status === "IN_PROGRESS").length,
+      completedExecutions: executions.filter((e) => e.status === "COMPLETED").length,
+      passRate: 0,
+      recentExecutions: [],
+      totalDefects: defects.length,
+      defectsBySeverity: {},
+      defectsByStatus: {},
+      defectHeatmap: [],
+      recentAuditLogs: []
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/users") {
     json(res, 200, [...users].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)));
     return;
@@ -728,6 +768,37 @@ const server = http.createServer(async (req, res) => {
       for (let index = testSuites.length - 1; index >= 0; index--) {
         if (testSuites[index].testPlanId === planId) testSuites.splice(index, 1);
       }
+      noContent(res);
+      return;
+    }
+  }
+
+  // 독립 스위트 — 테스트런에서 직접 생성/관리
+  if (req.method === "GET" && url.pathname === "/api/suites") {
+    json(res, 200, testSuites.map(normalizeSuite));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/suites") {
+    const body = await readBody(req);
+    const now = new Date().toISOString();
+    const suite = { id: nextSuiteId++, testPlanId: body.testPlanId ?? null, name: body.name, description: body.description ?? null, testCaseIds: [...new Set(body.testCaseIds || [])], createdAt: now, updatedAt: now };
+    testSuites.push(suite);
+    json(res, 201, normalizeSuite(suite));
+    return;
+  }
+  const standaloneSuiteMatch = url.pathname.match(/^\/api\/suites\/(\d+)$/);
+  if (standaloneSuiteMatch) {
+    const suite = testSuites.find((item) => item.id === Number(standaloneSuiteMatch[1]));
+    if (!suite) { json(res, 404, { message: `TestSuite not found. id=${standaloneSuiteMatch[1]}` }); return; }
+    if (req.method === "GET") { json(res, 200, normalizeSuite(suite)); return; }
+    if (req.method === "PUT") {
+      const body = await readBody(req);
+      Object.assign(suite, { name: body.name, description: body.description ?? null, testCaseIds: [...new Set(body.testCaseIds || [])], updatedAt: new Date().toISOString() });
+      json(res, 200, normalizeSuite(suite));
+      return;
+    }
+    if (req.method === "DELETE") {
+      testSuites.splice(testSuites.indexOf(suite), 1);
       noContent(res);
       return;
     }

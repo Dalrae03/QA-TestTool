@@ -2,6 +2,7 @@ package com.tms.testrun.service;
 
 import com.tms.attachment.entity.AttachmentEntityType;
 import com.tms.attachment.service.AttachmentService;
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testrun.dto.CreateTestRunRequest;
@@ -48,6 +49,7 @@ public class TestRunService {
                 request.actualResult(),
                 request.notes(),
                 request.assignee(),
+                request.failureReason(),
                 LocalDateTime.now()
         );
 
@@ -62,6 +64,7 @@ public class TestRunService {
         testRun.setActualResult(request.actualResult());
         testRun.setNotes(request.notes());
         testRun.setAssignee(request.assignee());
+        testRun.setFailureReason(request.failureReason());
 
         return TestRunResponse.from(testRun);
     }
@@ -75,14 +78,11 @@ public class TestRunService {
 
     private TestRun findTestRunInTestCase(Long testCaseId, Long runId) {
         ensureTestCaseExists(testCaseId);
-
         TestRun testRun = testRunRepository.findById(runId)
                 .orElseThrow(() -> new EntityNotFoundException("TestRun not found. id=" + runId));
-
         if (!testRun.getTestCase().getId().equals(testCaseId)) {
             throw new EntityNotFoundException("TestRun not found. id=" + runId);
         }
-
         return testRun;
     }
 

@@ -23,20 +23,23 @@ public class AreaTagService {
         this.testCaseRepository = testCaseRepository;
     }
 
-    public List<AreaTagResponse> getAllAreaTags() {
-        return areaTagRepository.findAll()
-                .stream()
-                .map(AreaTagResponse::from)
-                .toList();
+    public List<AreaTagResponse> getAllAreaTags(Long projectId) {
+        List<AreaTag> tags = projectId != null
+                ? areaTagRepository.findAllByProjectId(projectId)
+                : areaTagRepository.findAll();
+        return tags.stream().map(AreaTagResponse::from).toList();
     }
 
     @Transactional
     public AreaTagResponse createAreaTag(CreateAreaTagRequest request) {
         String normalizedName = request.name().trim();
-        if (areaTagRepository.existsByNameIgnoreCase(normalizedName)) {
+        boolean exists = request.projectId() != null
+                ? areaTagRepository.existsByNameIgnoreCaseAndProjectId(normalizedName, request.projectId())
+                : areaTagRepository.existsByNameIgnoreCase(normalizedName);
+        if (exists) {
             throw new IllegalArgumentException("이미 존재하는 태그입니다: " + normalizedName);
         }
-        return AreaTagResponse.from(areaTagRepository.save(new AreaTag(normalizedName)));
+        return AreaTagResponse.from(areaTagRepository.save(new AreaTag(normalizedName, request.projectId())));
     }
 
     @Transactional

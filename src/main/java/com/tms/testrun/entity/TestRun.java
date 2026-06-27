@@ -1,5 +1,6 @@
 package com.tms.testrun.entity;
 
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testcase.entity.TestCase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,7 +30,7 @@ public class TestRun {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private TestRunStatus status;
+    private ResultStatus status;
 
     @Lob
     @Column(nullable = false)
@@ -42,6 +43,10 @@ public class TestRun {
     @Column(length = 100)
     private String assignee;
 
+    @Lob
+    @Column
+    private String failureReason;
+
     @Column(nullable = false)
     private LocalDateTime executedAt;
 
@@ -50,20 +55,32 @@ public class TestRun {
 
     public TestRun(
             TestCase testCase,
-            TestRunStatus status,
+            ResultStatus status,
             String actualResult,
             String notes,
             LocalDateTime executedAt
     ) {
-        this(testCase, status, actualResult, notes, null, executedAt);
+        this(testCase, status, actualResult, notes, null, null, executedAt);
     }
 
     public TestRun(
             TestCase testCase,
-            TestRunStatus status,
+            ResultStatus status,
             String actualResult,
             String notes,
             String assignee,
+            LocalDateTime executedAt
+    ) {
+        this(testCase, status, actualResult, notes, assignee, null, executedAt);
+    }
+
+    public TestRun(
+            TestCase testCase,
+            ResultStatus status,
+            String actualResult,
+            String notes,
+            String assignee,
+            String failureReason,
             LocalDateTime executedAt
     ) {
         this.testCase = testCase;
@@ -71,45 +88,22 @@ public class TestRun {
         this.actualResult = actualResult;
         this.notes = notes;
         this.assignee = assignee;
+        this.failureReason = failureReason;
         this.executedAt = executedAt;
     }
 
-    public Long getId() {
-        return id;
-    }
-
-    public TestCase getTestCase() {
-        return testCase;
-    }
-
-    public TestRunStatus getStatus() {
-        return status;
-    }
-
-    public String getActualResult() {
-        return actualResult;
-    }
-
-    public String getNotes() {
-        return notes;
-    }
-
-    public LocalDateTime getExecutedAt() {
-        return executedAt;
-    }
-
-    public void setStatus(TestRunStatus status) {
-        this.status = status;
-    }
-
-    public void setActualResult(String actualResult) {
-        this.actualResult = actualResult;
-    }
-
-    public void setNotes(String notes) {
-        this.notes = notes;
-    }
-
+    public Long getId() { return id; }
+    public TestCase getTestCase() { return testCase; }
+    public ResultStatus getStatus() { return status; }
+    public String getActualResult() { return actualResult; }
+    public String getNotes() { return notes; }
     public String getAssignee() { return assignee; }
+    public String getFailureReason() { return failureReason; }
+    public LocalDateTime getExecutedAt() { return executedAt; }
+
+    public void setStatus(ResultStatus status) { this.status = status; }
+    public void setActualResult(String actualResult) { this.actualResult = actualResult; }
+    public void setNotes(String notes) { this.notes = notes; }
     public void setAssignee(String assignee) { this.assignee = assignee; }
+    public void setFailureReason(String failureReason) { this.failureReason = failureReason; }
 }

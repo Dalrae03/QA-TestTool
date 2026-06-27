@@ -26,15 +26,15 @@ public class TestSuiteService {
     private final TestPlanRepository testPlanRepository;
     private final TestCaseRepository testCaseRepository;
 
-    public TestSuiteService(
-            TestSuiteRepository testSuiteRepository,
-            TestPlanRepository testPlanRepository,
-            TestCaseRepository testCaseRepository
-    ) {
+    public TestSuiteService(TestSuiteRepository testSuiteRepository,
+                            TestPlanRepository testPlanRepository,
+                            TestCaseRepository testCaseRepository) {
         this.testSuiteRepository = testSuiteRepository;
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
     }
+
+    // ── 플랜 소속 스위트 ─────────────────────────────────────────────
 
     public List<TestSuiteResponse> getSuites(Long planId) {
         ensurePlanExists(planId);
@@ -51,6 +51,7 @@ public class TestSuiteService {
         TestPlan plan = testPlanRepository.findById(planId)
                 .orElseThrow(() -> new EntityNotFoundException("TestPlan not found. id=" + planId));
         TestSuite suite = new TestSuite(plan, request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        suite.setProjectId(plan.getProjectId());
         return TestSuiteResponse.from(testSuiteRepository.save(suite));
     }
 
@@ -66,6 +67,55 @@ public class TestSuiteService {
         testSuiteRepository.delete(findInPlan(planId, suiteId));
     }
 
+    // ── 독립 스위트 (플랜 없음, 테스트런에서 직접 생성) ─────────────
+
+    public List<TestSuiteResponse> getStandaloneSuites(Long projectId) {
+        List<TestSuite> suites = projectId != null
+                ? testSuiteRepository.findByProjectIdAndTestPlanIdIsNullOrderByCreatedAtAsc(projectId)
+                : testSuiteRepository.findByTestPlanIdIsNullOrderByCreatedAtAsc();
+        return suites.stream().map(TestSuiteResponse::from).toList();
+    }
+
+    public List<TestSuiteResponse> getAllSuites(Long projectId) {
+        List<TestSuite> suites = projectId != null
+                ? testSuiteRepository.findAllByProjectIdOrderByCreatedAtAsc(projectId)
+                : testSuiteRepository.findAllByOrderByCreatedAtAsc();
+        return suites.stream().map(TestSuiteResponse::from).toList();
+    }
+
+    public TestSuiteResponse getAnySuite(Long suiteId) {
+        TestSuite suite = testSuiteRepository.findById(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + suiteId));
+        suite.getTestCases().size();
+        return TestSuiteResponse.from(suite);
+    }
+
+    @Transactional
+    public TestSuiteResponse createStandaloneSuite(TestSuiteRequest request) {
+        TestSuite suite = new TestSuite(request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        suite.setProjectId(request.projectId());
+        return TestSuiteResponse.from(testSuiteRepository.save(suite));
+    }
+
+    @Transactional
+    public TestSuiteResponse updateAnySuite(Long suiteId, TestSuiteRequest request) {
+        TestSuite suite = testSuiteRepository.findById(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + suiteId));
+        suite.update(request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        if (request.projectId() != null) {
+            suite.setProjectId(request.projectId());
+        }
+        return TestSuiteResponse.from(suite);
+    }
+
+    @Transactional
+    public void deleteAnySuite(Long suiteId) {
+        testSuiteRepository.delete(testSuiteRepository.findById(suiteId)
+                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + suiteId)));
+    }
+
+    // ── 공통 ─────────────────────────────────────────────────────────
+
     @Transactional
     public void removeTestCaseFromAllSuites(Long testCaseId) {
         testSuiteRepository.findAllByTestCases_Id(testCaseId)
@@ -74,13 +124,12 @@ public class TestSuiteService {
 
     private List<TestCase> loadTestCases(List<Long> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
-
         List<Long> uniqueIds = new LinkedHashSet<>(ids).stream().toList();
         Map<Long, TestCase> casesById = testCaseRepository.findAllById(uniqueIds).stream()
                 .collect(Collectors.toMap(TestCase::getId, Function.identity()));
         List<Long> missingIds = uniqueIds.stream().filter(id -> !casesById.containsKey(id)).toList();
         if (!missingIds.isEmpty()) {
-            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID가 포함되어 있습니다: " + missingIds);
+            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID: " + missingIds);
         }
         return uniqueIds.stream().map(casesById::get).toList();
     }
@@ -89,8 +138,8 @@ public class TestSuiteService {
         ensurePlanExists(planId);
         TestSuite suite = testSuiteRepository.findById(suiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + suiteId));
-        if (!suite.getTestPlan().getId().equals(planId)) {
-            throw new EntityNotFoundException("TestSuite not found. id=" + suiteId);
+        if (suite.getTestPlan() == null || !suite.getTestPlan().getId().equals(planId)) {
+            throw new EntityNotFoundException("TestSuite not found in plan. id=" + suiteId);
         }
         suite.getTestCases().size();
         return suite;

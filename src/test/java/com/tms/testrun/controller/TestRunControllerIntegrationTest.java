@@ -15,8 +15,8 @@ import com.tms.testcase.entity.TestCasePriority;
 import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
 import com.tms.testcase.repository.TestCaseRepository;
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testrun.dto.CreateTestRunRequest;
-import com.tms.testrun.entity.TestRunStatus;
 import com.tms.testrun.repository.TestRunRepository;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -68,10 +68,10 @@ class TestRunControllerIntegrationTest {
         ));
 
         CreateTestRunRequest request = new CreateTestRunRequest(
-                TestRunStatus.PASSED,
+                ResultStatus.PASSED,
                 "로그인이 정상 동작했습니다.",
                 "Chrome 최신 버전에서 확인",
-                null
+                null, null
         );
 
         MvcResult createResult = mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
@@ -123,7 +123,7 @@ class TestRunControllerIntegrationTest {
                 null,
                 " ",
                 null,
-                null
+                null, null
         );
 
         mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
@@ -152,11 +152,11 @@ class TestRunControllerIntegrationTest {
                 List.of()
         ));
 
-        for (TestRunStatus status : List.of(TestRunStatus.PASSED, TestRunStatus.FAILED, TestRunStatus.BLOCKED)) {
+        for (ResultStatus status : List.of(ResultStatus.PASSED, ResultStatus.FAILED, ResultStatus.BLOCKED)) {
             mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                    status, status + " result", null, null
+                                    status, status + " result", null, null, null
                             ))))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.status").value(status.name()));
@@ -165,7 +165,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.SKIPPED, "Skipped result", null, null
+                                ResultStatus.SKIPPED, "Skipped result", null, null, null
                         ))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.supportedStatus")
@@ -187,7 +187,7 @@ class TestRunControllerIntegrationTest {
         MvcResult createResult = mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.FAILED, "초기 결과", null, null
+                                ResultStatus.FAILED, "초기 결과", null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -196,7 +196,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(put("/api/testcases/{testCaseId}/runs/{runId}", testCase.getId(), runId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "수정된 결과", "추가 메모", null
+                                ResultStatus.PASSED, "수정된 결과", "추가 메모", null, null
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PASSED"))
@@ -215,7 +215,7 @@ class TestRunControllerIntegrationTest {
         MvcResult createResult = mockMvc.perform(post("/api/testcases/{testCaseId}/runs", testCase.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "정상 동작", null, "홍길동"
+                                ResultStatus.PASSED, "정상 동작", null, "홍길동", null
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.assignee").value("홍길동"))
@@ -225,7 +225,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(put("/api/testcases/{testCaseId}/runs/{runId}", testCase.getId(), runId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "정상 동작", null, "김철수"
+                                ResultStatus.PASSED, "정상 동작", null, "김철수", null
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignee").value("김철수"));
@@ -233,7 +233,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(put("/api/testcases/{testCaseId}/runs/{runId}", testCase.getId(), runId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "정상 동작", null, null
+                                ResultStatus.PASSED, "정상 동작", null, null, null
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.assignee").doesNotExist());
@@ -247,7 +247,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(post("/api/testcases/9999/runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "결과", null, null
+                                ResultStatus.PASSED, "결과", null, null, null
                         ))))
                 .andExpect(status().isNotFound());
     }
@@ -268,7 +268,7 @@ class TestRunControllerIntegrationTest {
         MvcResult createResult = mockMvc.perform(post("/api/testcases/{testCaseId}/runs", caseA.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.PASSED, "결과", null, null
+                                ResultStatus.PASSED, "결과", null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -277,7 +277,7 @@ class TestRunControllerIntegrationTest {
         mockMvc.perform(put("/api/testcases/{testCaseId}/runs/{runId}", caseB.getId(), runId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateTestRunRequest(
-                                TestRunStatus.FAILED, "다른 케이스로 수정 시도", null, null
+                                ResultStatus.FAILED, "다른 케이스로 수정 시도", null, null, null
                         ))))
                 .andExpect(status().isNotFound());
 

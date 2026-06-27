@@ -65,7 +65,7 @@ class ExecutionControllerIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
-                                suiteId, null, "Sprint regression", "jun"
+                                suiteId, null, null, null, null, "Sprint regression", "jun"
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-runs/\\d+")))
@@ -81,7 +81,7 @@ class ExecutionControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/test-runs/{id}/items/{itemId}", runId, itemId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.PASSED, "확인 완료"))))
+                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.PASSED, "확인 완료", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.passed").value(1))
                 .andExpect(jsonPath("$.untested").value(1))
@@ -98,7 +98,7 @@ class ExecutionControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/test-runs/{id}/items/{itemId}", runId, itemId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.FAILED, "완료 후 수정"))))
+                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.FAILED, "완료 후 수정", null))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("완료된 테스트런은 다시 열기 전까지 수정할 수 없습니다."));
 
@@ -114,7 +114,7 @@ class ExecutionControllerIntegrationTest {
 
         mockMvc.perform(patch("/api/test-runs/{id}/items/{itemId}", runId, itemId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.FAILED, " 재확인 필요 "))))
+                        .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.FAILED, " 재확인 필요 ", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.failed").value(1))
                 .andExpect(jsonPath("$.items[0].comment").value("재확인 필요"));
@@ -135,7 +135,7 @@ class ExecutionControllerIntegrationTest {
 
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null, null, null, null))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다."));
     }
@@ -144,7 +144,7 @@ class ExecutionControllerIntegrationTest {
     void shouldReturnNotFoundForUnknownSuite() throws Exception {
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null, null, null, null))))
                 .andExpect(status().isNotFound());
     }
 
@@ -152,14 +152,14 @@ class ExecutionControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Plan " + name, null, TestPlanStatus.ACTIVE, null, null, null
+                                "Plan " + name, null, TestPlanStatus.ACTIVE, null, null, null, null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();
 
         MvcResult suiteResult = mockMvc.perform(post("/api/test-plans/{planId}/suites", planId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new TestSuiteRequest(name, null, caseIds))))
+                        .content(objectMapper.writeValueAsString(new TestSuiteRequest(name, null, caseIds, null))))
                 .andExpect(status().isCreated()).andReturn();
         return objectMapper.readTree(suiteResult.getResponse().getContentAsString()).get("id").asLong();
     }
