@@ -3,9 +3,14 @@ package com.tms.jira.controller;
 import com.tms.defect.dto.DefectResponse;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.JiraSyncResult;
+import com.tms.jira.dto.RequirementCoverageResponse;
+import com.tms.jira.dto.TestCaseRequirementsResponse;
 import com.tms.jira.service.JiraService;
+import com.tms.jira.service.JiraTraceabilityService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,9 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class JiraController {
 
     private final JiraService jiraService;
+    private final JiraTraceabilityService traceabilityService;
 
-    public JiraController(JiraService jiraService) {
+    public JiraController(JiraService jiraService, JiraTraceabilityService traceabilityService) {
         this.jiraService = jiraService;
+        this.traceabilityService = traceabilityService;
     }
 
     /** TMS 결함 → Jira 이슈 생성 또는 업데이트 */
@@ -45,5 +52,43 @@ public class JiraController {
     @PostMapping("/api/jira/sync-all")
     public ResponseEntity<JiraSyncResult> syncAll() {
         return ResponseEntity.ok(jiraService.syncAll());
+    }
+
+    /** 역방향: Jira 이슈 key로 연결된 TMS 결함 조회 */
+    @GetMapping("/api/jira/issues/{jiraKey}/defect")
+    public ResponseEntity<DefectResponse> getDefectByJiraKey(@PathVariable String jiraKey) {
+        return ResponseEntity.ok(jiraService.findByJiraKey(jiraKey));
+    }
+
+    // ===== 테스트케이스 ↔ Jira 요구사항 추적성(traceability) =====
+
+    /** 정방향: 테스트케이스에 연결된 Jira 요구사항 목록 조회 */
+    @GetMapping("/api/testcases/{id}/jira/requirements")
+    public ResponseEntity<TestCaseRequirementsResponse> getRequirements(@PathVariable Long id) {
+        return ResponseEntity.ok(traceabilityService.getRequirements(id));
+    }
+
+    /** 테스트케이스에 Jira 요구사항 연결 */
+    @PostMapping("/api/testcases/{id}/jira/requirements")
+    public ResponseEntity<TestCaseRequirementsResponse> linkRequirement(
+            @PathVariable Long id,
+            @Valid @RequestBody JiraLinkRequest request
+    ) {
+        return ResponseEntity.ok(traceabilityService.linkRequirement(id, request));
+    }
+
+    /** 테스트케이스의 Jira 요구사항 연결 해제 */
+    @DeleteMapping("/api/testcases/{id}/jira/requirements/{jiraKey}")
+    public ResponseEntity<TestCaseRequirementsResponse> unlinkRequirement(
+            @PathVariable Long id,
+            @PathVariable String jiraKey
+    ) {
+        return ResponseEntity.ok(traceabilityService.unlinkRequirement(id, jiraKey));
+    }
+
+    /** 역방향: Jira 요구사항을 검증하는 테스트케이스 목록(커버리지) 조회 */
+    @GetMapping("/api/jira/requirements/{jiraKey}/testcases")
+    public ResponseEntity<RequirementCoverageResponse> getCoverage(@PathVariable String jiraKey) {
+        return ResponseEntity.ok(traceabilityService.getCoverage(jiraKey));
     }
 }

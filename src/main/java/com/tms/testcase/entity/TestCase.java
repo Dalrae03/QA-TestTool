@@ -3,7 +3,9 @@ package com.tms.testcase.entity;
 import com.tms.configuration.entity.TestConfiguration;
 import com.tms.defect.entity.Defect;
 import com.tms.environment.entity.ServerEnvironment;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -111,6 +113,18 @@ public class TestCase {
             inverseJoinColumns = @JoinColumn(name = "defect_id")
     )
     private List<Defect> defects = new ArrayList<>();
+
+    /**
+     * 이 테스트케이스가 검증하는 Jira 요구사항/이슈 key 목록.
+     * 요구사항↔테스트 양방향 추적성(traceability)을 위한 연결이며, 한 테스트가 여러 요구사항을 다룰 수 있다.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "test_case_jira_requirements",
+            joinColumns = @JoinColumn(name = "test_case_id")
+    )
+    @Column(name = "jira_key", length = 50)
+    private List<String> jiraRequirementKeys = new ArrayList<>();
 
     @Column(name = "project_id")
     private Long projectId;
@@ -393,6 +407,24 @@ public class TestCase {
 
     public void unlinkDefect(Defect defect) {
         defects.remove(defect);
+    }
+
+    /** Jira 요구사항 key를 연결한다. 이미 연결돼 있으면 false를 반환한다. */
+    public boolean linkRequirement(String jiraKey) {
+        if (jiraRequirementKeys.contains(jiraKey)) {
+            return false;
+        }
+        jiraRequirementKeys.add(jiraKey);
+        return true;
+    }
+
+    /** Jira 요구사항 key 연결을 해제한다. 실제로 제거됐으면 true를 반환한다. */
+    public boolean unlinkRequirement(String jiraKey) {
+        return jiraRequirementKeys.remove(jiraKey);
+    }
+
+    public List<String> getJiraRequirementKeys() {
+        return jiraRequirementKeys;
     }
 
     public Long getProjectId() { return projectId; }

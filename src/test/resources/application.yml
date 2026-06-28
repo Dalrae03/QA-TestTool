@@ -27,3 +27,4 @@ jira:
   email:
   api-token:
   project-key:
+  web-base-url:

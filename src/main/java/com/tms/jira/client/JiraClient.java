@@ -2,6 +2,7 @@ package com.tms.jira.client;
 
 import com.tms.global.exception.InvalidRequestException;
 import com.tms.jira.config.JiraProperties;
+import com.tms.jira.dto.JiraIssueInfo;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -69,6 +70,54 @@ public class JiraClient {
         }
     }
 
+    /** Jira 이슈 핵심 정보(요약/상태/링크) 조회. 추적성 화면 표시에 사용 */
+    @SuppressWarnings("unchecked")
+    public JiraIssueInfo getIssue(String issueKey) {
+        requireConfigured();
+        try {
+            Map<String, Object> issue = restClient.get()
+                    .uri("/rest/api/3/issue/{key}?fields=summary,status", issueKey)
+                    .retrieve()
+                    .body(Map.class);
+            Map<String, Object> fields = (Map<String, Object>) issue.get("fields");
+            String summary = (String) fields.get("summary");
+            Map<String, Object> status = (Map<String, Object>) fields.get("status");
+            String statusName = (String) status.get("name");
+            Map<String, Object> category = (Map<String, Object>) status.get("statusCategory");
+            String categoryKey = (String) category.get("key");
+            return new JiraIssueInfo(issueKey, summary, statusName, categoryKey, browseUrl(issueKey));
+        } catch (HttpClientErrorException e) {
+            throw new InvalidRequestException("Jira 이슈 조회 실패: " + e.getResponseBodyAsString());
+        }
+    }
+
+    /**
+     * Jira 이슈에 TMS 항목을 가리키는 원격 링크(remote link)를 추가한다.
+     * TMS→Jira 방향의 추적 연결로, Jira 화면에서도 연결된 TMS 항목을 볼 수 있게 한다.
+     * webBaseUrl이 설정되지 않았으면 아무 동작도 하지 않는다(best-effort).
+     */
+    public void addRemoteLink(String issueKey, String url, String title) {
+        requireConfigured();
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        Map<String, Object> body = Map.of(
+                "object", Map.of(
+                        "url", url,
+                        "title", title != null ? title : url
+                )
+        );
+        try {
+            restClient.post()
+                    .uri("/rest/api/3/issue/{key}/remotelink", issueKey)
+                    .body(body)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException e) {
+            throw new InvalidRequestException("Jira 원격 링크 추가 실패: " + e.getResponseBodyAsString());
+        }
+    }
+
     /** 이슈를 targetCategory("new"|"indeterminate"|"done")에 해당하는 상태로 전환 */
     @SuppressWarnings("unchecked")
     public void transitionToCategory(String issueKey, String targetCategory) {
@@ -126,6 +175,15 @@ public class JiraClient {
             throw new InvalidRequestException(
                     "Jira 연동이 설정되지 않았습니다. JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN, JIRA_PROJECT_KEY 환경변수를 확인하세요.");
         }
+    }
+
+    /** 이슈 key로 Jira 웹 브라우즈 URL 생성 (baseUrl 미설정 시 null) */
+    private String browseUrl(String issueKey) {
+        String base = props.baseUrl();
+        if (base == null || base.isBlank()) {
+            return null;
+        }
+        return base.replaceAll("/+$", "") + "/browse/" + issueKey;
     }
 
     private static String buildBasicAuth(JiraProperties props) {
