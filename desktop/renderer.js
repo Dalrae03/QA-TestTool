@@ -29,6 +29,7 @@ const state = {
   runAssigneeFilter: "",     // 런 목록 담당자 필터 — "" 전체 | "__none__" 미지정 | 담당자명
   runItemSelection: new Set(), // 결과 일괄 처리 — 현재 런에서 선택된 실행 아이템 id
   runSourceMode: "suite",    // 새 테스트런 모달 — "suite" | "cases"
+  showRunStats: false,       // 런 상세 — 진척도·통계 패널 표시 여부(버튼 토글)
   areaTags: [],
   allDefects: [],
   serverEnvironments: [],
@@ -3461,18 +3462,25 @@ function renderExecutionDetail(exec) {
 
   const done = exec.total - exec.untested;
   const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
+  const completedAt = exec.completedAt ? formatDateTime(exec.completedAt) : "";
 
   const report = document.getElementById("runDetailReport");
 
-  // ── 런 대시보드: 도넛 + 요약 — 진행 중·완료 상태 모두 항상 표시 ──
-  report.hidden = false;
+  // ── 런 대시보드: 도넛 + 요약 — '진척도·통계' 버튼으로 토글 ──
+  const executed = exec.passed + exec.failed + exec.blocked + exec.retest;
+  const progressPct = typeof exec.progressPct === "number"
+    ? exec.progressPct
+    : (exec.total ? Math.round((done / exec.total) * 100) : 0);
+  const passRate = executed ? Math.round((exec.passed / executed) * 100) : 0;
   report.innerHTML =
     `<div class="run-report-chart">${donutSvg(counts)}</div>` +
     `<div class="run-report-summary">` +
       `<div class="run-report-line"><span class="run-report-num">${done}/${exec.total}</span><span class="run-report-cap">${isCompleted ? "실행 완료" : "실행됨"}</span></div>` +
+      `<div class="run-report-metrics"><span class="run-report-metric">진척도 <strong>${progressPct}%</strong></span><span class="run-report-metric">통과율 <strong>${passRate}%</strong></span></div>` +
       `<div class="suite-run-stats" style="margin-top:6px">${runChips(exec)}</div>` +
       (completedAt ? `<div class="run-report-when">완료 ${completedAt}</div>` : "") +
     `</div>`;
+  applyRunStatsVisibility();
 
   state.currentExec = exec;
   const cont = document.getElementById("runDetailItems");
@@ -3494,12 +3502,41 @@ function runChips(exec) {
 function renderRunProgress(exec) {
   const done = exec.total - exec.untested;
   const report = document.getElementById("runDetailReport");
-  if (report && !report.hidden) {
+  // 숨김 상태여도 DOM은 갱신해 둔다 — '진척도·통계'를 열었을 때 즉시 최신값이 보이도록.
+  if (report && report.querySelector(".run-report-chart")) {
     const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
+    const executed = exec.passed + exec.failed + exec.blocked + exec.retest;
+    const progressPct = typeof exec.progressPct === "number"
+      ? exec.progressPct
+      : (exec.total ? Math.round((done / exec.total) * 100) : 0);
+    const passRate = executed ? Math.round((exec.passed / executed) * 100) : 0;
     report.querySelector(".run-report-chart").innerHTML = donutSvg(counts);
     report.querySelector(".run-report-num").textContent = `${done}/${exec.total}`;
+    const metrics = report.querySelector(".run-report-metrics");
+    if (metrics) {
+      metrics.innerHTML =
+        `<span class="run-report-metric">진척도 <strong>${progressPct}%</strong></span>` +
+        `<span class="run-report-metric">통과율 <strong>${passRate}%</strong></span>`;
+    }
     report.querySelector(".suite-run-stats").innerHTML = runChips(exec);
   }
+}
+
+// 진척도·통계 패널 표시/숨김을 state.showRunStats에 맞춰 적용 — 버튼 active/aria 상태도 동기화.
+function applyRunStatsVisibility() {
+  const report = document.getElementById("runDetailReport");
+  const btn = document.getElementById("runStatsButton");
+  if (report) report.hidden = !state.showRunStats;
+  if (btn) {
+    btn.classList.toggle("active", state.showRunStats);
+    btn.setAttribute("aria-pressed", String(state.showRunStats));
+  }
+}
+
+// '진척도·통계' 버튼 토글.
+function toggleRunStats() {
+  state.showRunStats = !state.showRunStats;
+  applyRunStatsVisibility();
 }
 
 // 테스트케이스 원본 상세 — 펼침 패널에서 재조회 없이 재사용.
@@ -4224,6 +4261,7 @@ async function bootstrap() {
   document.getElementById("runCompleteButton").addEventListener("click", toggleExecutionComplete);
   document.getElementById("runCloneButton").addEventListener("click", cloneSelectedExecution);
   document.getElementById("runReportButton").addEventListener("click", exportSelectedRunReport);
+  document.getElementById("runStatsButton").addEventListener("click", toggleRunStats);
   document.getElementById("runAssigneeFilter").addEventListener("change", e => {
     state.runAssigneeFilter = e.target.value;
     renderExecutionList();

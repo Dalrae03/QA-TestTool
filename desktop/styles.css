@@ -251,7 +251,11 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .run-report-line { display: flex; align-items: baseline; gap: 8px; }
 .run-report-num { font-size: 24px; font-weight: 700; font-family: var(--font-title); color: var(--text-primary); }
 .run-report-cap { font-size: 12px; color: var(--text-muted); }
+.run-report-metrics { display: flex; gap: 16px; margin-top: 8px; }
+.run-report-metric { font-size: 12px; color: var(--text-muted); }
+.run-report-metric strong { font-size: 14px; color: var(--text-primary); font-family: var(--font-title); }
 .run-report-when { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+#runStatsButton.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .suite-run-badge.untested { background: #f3f4f6; color: #9ca3af; }
 .suite-run-badge.retest { background: #fef3c7; color: #b45309; }
 
