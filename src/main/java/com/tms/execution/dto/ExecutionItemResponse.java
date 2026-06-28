@@ -3,6 +3,7 @@ package com.tms.execution.dto;
 import com.tms.execution.entity.ExecutionItem;
 import com.tms.execution.entity.ResultStatus;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record ExecutionItemResponse(
         Long id,
@@ -13,7 +14,8 @@ public record ExecutionItemResponse(
         ResultStatus status,
         String comment,
         String failureReason,
-        LocalDateTime executedAt
+        LocalDateTime executedAt,
+        List<ExecutionItemHistoryResponse> history
 ) {
     public static ExecutionItemResponse from(ExecutionItem item) {
         return new ExecutionItemResponse(
@@ -25,7 +27,8 @@ public record ExecutionItemResponse(
                 item.getStatus(),
                 item.getComment(),
                 item.getFailureReason(),
-                item.getExecutedAt()
+                item.getExecutedAt(),
+                item.getHistory().stream().map(ExecutionItemHistoryResponse::from).toList()
         );
     }
 }

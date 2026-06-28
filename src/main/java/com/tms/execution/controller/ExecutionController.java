@@ -1,9 +1,11 @@
 package com.tms.execution.controller;
 
+import com.tms.execution.dto.BulkRecordResultRequest;
 import com.tms.execution.dto.CreateExecutionRequest;
 import com.tms.execution.dto.ExecutionResponse;
 import com.tms.execution.dto.RecordResultRequest;
 import com.tms.execution.dto.TestCaseExecutionHistoryResponse;
+import com.tms.execution.dto.UpdateExecutionEnvironmentRequest;
 import com.tms.execution.dto.UpdateExecutionPlanRequest;
 import com.tms.execution.dto.UpdateExecutionRequest;
 import com.tms.execution.service.ExecutionService;
@@ -33,8 +35,10 @@ public class ExecutionController {
     }
 
     @GetMapping
-    public List<ExecutionResponse> getExecutions(@RequestParam(required = false) Long projectId) {
-        return executionService.getExecutions(projectId);
+    public List<ExecutionResponse> getExecutions(
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String assignee) {
+        return executionService.getExecutions(projectId, assignee);
     }
 
     @GetMapping("/{id}")
@@ -53,6 +57,12 @@ public class ExecutionController {
         return executionService.updateExecution(id, request);
     }
 
+    @PostMapping("/{id}/clone")
+    public ResponseEntity<ExecutionResponse> cloneExecution(@PathVariable Long id) {
+        ExecutionResponse response = executionService.cloneExecution(id);
+        return ResponseEntity.created(URI.create("/api/test-runs/" + response.id())).body(response);
+    }
+
     @GetMapping("/items/by-test-case/{testCaseId}")
     public List<TestCaseExecutionHistoryResponse> getExecutionHistory(@PathVariable Long testCaseId) {
         return executionService.getExecutionHistory(testCaseId);
@@ -63,6 +73,11 @@ public class ExecutionController {
         return executionService.updateExecutionPlan(id, request);
     }
 
+    @PatchMapping("/{id}/environment")
+    public ExecutionResponse updateExecutionEnvironment(@PathVariable Long id, @RequestBody UpdateExecutionEnvironmentRequest request) {
+        return executionService.updateExecutionEnvironment(id, request);
+    }
+
     @PatchMapping("/{id}/items/{itemId}")
     public ExecutionResponse recordResult(
             @PathVariable Long id,
@@ -70,6 +85,14 @@ public class ExecutionController {
             @Valid @RequestBody RecordResultRequest request
     ) {
         return executionService.recordResult(id, itemId, request);
+    }
+
+    @PatchMapping("/{id}/bulk-results")
+    public ExecutionResponse bulkRecordResult(
+            @PathVariable Long id,
+            @Valid @RequestBody BulkRecordResultRequest request
+    ) {
+        return executionService.bulkRecordResult(id, request);
     }
 
     @DeleteMapping("/{id}")

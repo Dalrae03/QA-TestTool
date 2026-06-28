@@ -52,6 +52,15 @@ public class ExcelExportController {
         return toResponse(excelExportService.exportTestRuns(projectId, format));
     }
 
+    /** 단일 테스트런 결과 리포트(요약 + 케이스별 결과). format=csv 가능. */
+    @GetMapping("/api/export/test-runs/{executionId}/report/excel")
+    public ResponseEntity<byte[]> exportRunReport(
+            @PathVariable Long executionId,
+            @RequestParam(required = false, defaultValue = "xlsx") String format
+    ) {
+        return toResponse(excelExportService.exportRunReport(executionId, format));
+    }
+
     /** 결함 목록. format=csv 가능. */
     @GetMapping("/api/export/defects/excel")
     public ResponseEntity<byte[]> exportDefects(

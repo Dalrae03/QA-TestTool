@@ -46,6 +46,16 @@ public class Execution {
     @Column(length = 200)
     private String suiteName;
 
+    // 실행환경(테스트 컨피그) 스냅샷 — 컨피그가 삭제·수정돼도 런이 "어떤 환경/버전에서 실행됐는지"는 그대로 보존된다 (FK 미사용).
+    private Long testConfigurationId;
+
+    @Column(length = 100)
+    private String configurationName;
+
+    // OS/브라우저/기기/Java·DB 버전까지 한 줄로 굳혀둔 스냅샷 — 컨피그가 나중에 바뀌어도 당시 환경이 흔들리지 않게.
+    @Column(length = 500)
+    private String environmentDetail;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ExecutionStatus status;
@@ -94,6 +104,12 @@ public class Execution {
         this.planName = planName;
     }
 
+    public void updateEnvironment(Long testConfigurationId, String configurationName, String environmentDetail) {
+        this.testConfigurationId = testConfigurationId;
+        this.configurationName = configurationName;
+        this.environmentDetail = environmentDetail;
+    }
+
     public void update(String name, String description, ExecutionStatus status, String assignee) {
         this.name = name;
         this.description = description;
@@ -118,6 +134,9 @@ public class Execution {
     public String getPlanName() { return planName; }
     public Long getTestSuiteId() { return testSuiteId; }
     public String getSuiteName() { return suiteName; }
+    public Long getTestConfigurationId() { return testConfigurationId; }
+    public String getConfigurationName() { return configurationName; }
+    public String getEnvironmentDetail() { return environmentDetail; }
     public ExecutionStatus getStatus() { return status; }
     public String getAssignee() { return assignee; }
     public List<ExecutionItem> getItems() { return items; }

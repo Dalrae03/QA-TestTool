@@ -14,5 +14,11 @@ public interface ExecutionRepository extends JpaRepository<Execution, Long> {
     @EntityGraph(attributePaths = "items")
     List<Execution> findAllByProjectIdOrderByCreatedAtDesc(Long projectId);
 
+    @EntityGraph(attributePaths = "items")
+    List<Execution> findAllByAssigneeOrderByCreatedAtDesc(String assignee);
+
+    @EntityGraph(attributePaths = "items")
+    List<Execution> findAllByProjectIdAndAssigneeOrderByCreatedAtDesc(Long projectId, String assignee);
+
     long countByTestPlanIdAndStatus(Long testPlanId, ExecutionStatus status);
 }
