@@ -6,11 +6,16 @@ import com.tms.execution.dto.RecordResultRequest;
 import com.tms.execution.dto.TestCaseExecutionHistoryResponse;
 import com.tms.execution.dto.UpdateExecutionPlanRequest;
 import com.tms.execution.dto.UpdateExecutionRequest;
+import com.tms.attachment.entity.AttachmentEntityType;
+import com.tms.attachment.service.AttachmentService;
+import com.tms.audit.entity.AuditAction;
+import com.tms.audit.service.AuditLogService;
 import com.tms.execution.entity.Execution;
 import com.tms.execution.entity.ExecutionItem;
 import com.tms.execution.repository.ExecutionItemRepository;
 import com.tms.execution.repository.ExecutionRepository;
 import com.tms.global.exception.InvalidRequestException;
+import com.tms.global.util.ProjectScope;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.entity.TestCaseVersion;
 import com.tms.testcase.repository.TestCaseRepository;
@@ -39,17 +44,23 @@ public class ExecutionService {
     private final TestPlanRepository testPlanRepository;
     private final TestCaseRepository testCaseRepository;
     private final TestCaseVersionRepository testCaseVersionRepository;
+    private final AttachmentService attachmentService;
+    private final AuditLogService auditLogService;
 
     public ExecutionService(ExecutionRepository executionRepository, ExecutionItemRepository executionItemRepository,
                              TestSuiteRepository testSuiteRepository,
                              TestPlanRepository testPlanRepository, TestCaseRepository testCaseRepository,
-                             TestCaseVersionRepository testCaseVersionRepository) {
+                             TestCaseVersionRepository testCaseVersionRepository,
+                             AttachmentService attachmentService,
+                             AuditLogService auditLogService) {
         this.executionRepository = executionRepository;
         this.executionItemRepository = executionItemRepository;
         this.testSuiteRepository = testSuiteRepository;
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
         this.testCaseVersionRepository = testCaseVersionRepository;
+        this.auditLogService = auditLogService;
+        this.attachmentService = attachmentService;
     }
 
     /** 테스트케이스 상세 "실행 기록" 탭 — 이 케이스가 테스트런을 통해 실행된 모든 이력(버전 스냅샷 포함). */
@@ -126,7 +137,7 @@ public class ExecutionService {
                 normalizeOptional(request.assignee())
         );
         suite.getTestCases().forEach(testCase -> addItemWithCurrentVersion(execution, testCase));
-        return ExecutionResponse.detail(executionRepository.save(execution));
+        return saveAndLog(execution);
     }
 
     /** 스위트 없이 테스트케이스를 직접 선택해 만드는 테스트런 — 임시 스위트를 만들지 않는다. */
@@ -140,7 +151,14 @@ public class ExecutionService {
                 .collect(Collectors.toMap(TestCase::getId, Function.identity()));
         List<Long> missingIds = uniqueIds.stream().filter(id -> !casesById.containsKey(id)).toList();
         if (!missingIds.isEmpty()) {
-            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID: " + missingIds);
+            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID가 포함되어 있습니다: " + missingIds);
+        }
+        List<Long> mismatched = uniqueIds.stream()
+                .map(casesById::get)
+                .filter(tc -> !ProjectScope.compatible(request.projectId(), tc.getProjectId()))
+                .map(TestCase::getId).toList();
+        if (!mismatched.isEmpty()) {
+            throw new InvalidRequestException("다른 프로젝트의 테스트케이스로는 테스트런을 만들 수 없습니다: " + mismatched);
         }
 
         String name = request.name() != null && !request.name().isBlank()
@@ -167,18 +185,36 @@ public class ExecutionService {
                 normalizeOptional(request.assignee())
         );
         uniqueIds.forEach(id -> addItemWithCurrentVersion(execution, casesById.get(id)));
-        return ExecutionResponse.detail(executionRepository.save(execution));
+        return saveAndLog(execution);
+    }
+
+    /** 새 테스트런 저장 + 생성 로그. */
+    private ExecutionResponse saveAndLog(Execution execution) {
+        Execution saved = executionRepository.save(execution);
+        auditLogService.log(AuditLogService.TEST_RUN, saved.getId(), AuditAction.CREATED,
+                "테스트런 '" + saved.getName() + "'이(가) 생성되었습니다. (" + saved.getItems().size() + "건)");
+        return ExecutionResponse.detail(saved);
     }
 
     @Transactional
     public ExecutionResponse updateExecution(Long id, UpdateExecutionRequest request) {
         Execution execution = findById(id);
+        boolean wasCompleted = execution.getStatus().isCompleted();
         execution.update(
                 request.name().trim(),
                 normalizeOptional(request.description()),
                 request.status(),
                 normalizeOptional(request.assignee())
         );
+        boolean nowCompleted = execution.getStatus().isCompleted();
+        // 완료 ↔ 재오픈 전환을 별도 로그로 남긴다.
+        if (!wasCompleted && nowCompleted) {
+            auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.COMPLETED,
+                    "테스트런 '" + execution.getName() + "'이(가) 완료 처리되었습니다.");
+        } else if (wasCompleted && !nowCompleted) {
+            auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.REOPENED,
+                    "테스트런 '" + execution.getName() + "'이(가) 다시 열렸습니다.");
+        }
         return ExecutionResponse.detail(execution);
     }
 
@@ -197,7 +233,14 @@ public class ExecutionService {
 
     @Transactional
     public void deleteExecution(Long id) {
-        executionRepository.delete(findById(id));
+        Execution execution = findById(id);
+        // 각 실행 아이템에 달린 첨부파일(실패 증거 등)을 먼저 정리한다 — 고아 파일 방지.
+        for (ExecutionItem item : execution.getItems()) {
+            attachmentService.deleteAllByEntity(AttachmentEntityType.EXECUTION_ITEM, item.getId());
+        }
+        executionRepository.delete(execution);
+        auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.DELETED,
+                "테스트런 '" + execution.getName() + "'이(가) 삭제되었습니다.");
     }
 
     @Transactional
@@ -211,6 +254,9 @@ public class ExecutionService {
                 .findFirst()
                 .orElseThrow(() -> new EntityNotFoundException("ExecutionItem not found. id=" + itemId));
         item.record(request.status(), normalizeOptional(request.comment()), normalizeOptional(request.failureReason()));
+        auditLogService.log(AuditLogService.TEST_RUN, executionId, AuditAction.RESULT_RECORDED,
+                "'" + item.getCaseTitle() + "' 결과: " + request.status()
+                        + " (런 '" + execution.getName() + "')");
         return ExecutionResponse.detail(execution);
     }
 

@@ -31,12 +31,15 @@ public class ExcelImportController {
 
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "import";
         String ext = filename.toLowerCase();
-        if (!ext.endsWith(".xlsx") && !ext.endsWith(".xls")) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Excel 파일(.xlsx, .xls)만 업로드할 수 있습니다."));
+        boolean isCsv = ext.endsWith(".csv");
+        if (!ext.endsWith(".xlsx") && !ext.endsWith(".xls") && !isCsv) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Excel(.xlsx, .xls) 또는 CSV(.csv) 파일만 업로드할 수 있습니다."));
         }
 
         try {
-            ImportResult result = excelImportService.importExcel(file.getInputStream(), filename, projectId);
+            ImportResult result = isCsv
+                    ? excelImportService.importCsv(file.getInputStream(), filename, projectId)
+                    : excelImportService.importExcel(file.getInputStream(), filename, projectId);
             return ResponseEntity.ok(Map.of(
                     "createdFolders", result.createdFolders(),
                     "createdCases", result.createdCases(),

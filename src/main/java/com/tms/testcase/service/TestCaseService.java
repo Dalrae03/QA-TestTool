@@ -11,6 +11,7 @@ import com.tms.defect.service.DefectService;
 import com.tms.environment.entity.ServerEnvironment;
 import com.tms.environment.repository.ServerEnvironmentRepository;
 import com.tms.global.exception.InvalidRequestException;
+import com.tms.global.util.ProjectScope;
 import com.tms.testcase.dto.CreateTestCaseRequest;
 import com.tms.testcase.dto.TestCaseResponse;
 import com.tms.testcase.dto.TestCaseVersionResponse;
@@ -128,6 +129,7 @@ public class TestCaseService {
         ServerEnvironment serverEnvironment = loadServerEnvironment(request.serverEnvironmentId());
         TestConfiguration configuration = loadTestConfiguration(request.testConfigurationId());
         TestFolder folder = loadFolder(request.folderId());
+        validateProjectScope(request.projectId(), folder, areaTags);
         TestCase testCase = new TestCase(
                 request.type(),
                 request.priority(),
@@ -162,6 +164,8 @@ public class TestCaseService {
         ServerEnvironment serverEnvironment = loadServerEnvironment(request.serverEnvironmentId());
         TestConfiguration configuration = loadTestConfiguration(request.testConfigurationId());
         TestFolder folder = loadFolder(request.folderId());
+        Long effectiveProjectId = request.projectId() != null ? request.projectId() : testCase.getProjectId();
+        validateProjectScope(effectiveProjectId, folder, areaTags);
         testCase.update(
                 request.type(),
                 request.priority(),
@@ -182,8 +186,12 @@ public class TestCaseService {
         );
         testCase.moveToFolder(folder);
         if (request.projectId() != null) testCase.setProjectId(request.projectId());
-        recordTestCaseUpdates(id, before, TestCaseAuditSnapshot.from(testCase));
-        createVersionSnapshot(testCase, "테스트케이스 수정");
+        TestCaseAuditSnapshot after = TestCaseAuditSnapshot.from(testCase);
+        recordTestCaseUpdates(id, before, after);
+        // 실제 변경이 있을 때만 버전 스냅샷을 남긴다 — 수정 없이 저장해도 버전이 오르던 문제 방지.
+        if (!before.equals(after)) {
+            createVersionSnapshot(testCase, "테스트케이스 수정");
+        }
         return TestCaseResponse.from(testCase);
     }
 
@@ -192,6 +200,11 @@ public class TestCaseService {
         TestCase testCase = findById(testCaseId);
         String before = folderName(testCase.getFolder());
         TestFolder folder = loadFolder(folderId);
+        validateProjectScope(testCase.getProjectId(), folder, List.of());
+        String after = folderName(folder);
+        if (Objects.equals(before, after)) {
+            return TestCaseResponse.from(testCase); // 폴더 변경 없음 — 버전/로그 생성하지 않음
+        }
         testCase.moveToFolder(folder);
         auditLogService.recordIfChanged(
                 AuditLogService.TEST_CASE,
@@ -199,7 +212,7 @@ public class TestCaseService {
                 AuditAction.MOVED,
                 "folder",
                 before,
-                folderName(folder)
+                after
         );
         createVersionSnapshot(testCase, "폴더 변경");
         return TestCaseResponse.from(testCase);
@@ -209,6 +222,9 @@ public class TestCaseService {
     public TestCaseResponse updateTestCaseStatus(Long id, UpdateTestCaseStatusRequest request) {
         TestCase testCase = findById(id);
         TestCaseStatus before = testCase.getStatus();
+        if (Objects.equals(before, request.status())) {
+            return TestCaseResponse.from(testCase); // 상태 변경 없음 — 버전/로그 생성하지 않음
+        }
         testCase.updateStatus(request.status());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.STATUS_CHANGED, "status", before, request.status());
         createVersionSnapshot(testCase, "상태 변경");
@@ -322,6 +338,19 @@ public class TestCaseService {
         if (id == null) return null;
         return testFolderRepository.findById(id)
                 .orElseThrow(() -> new InvalidRequestException("존재하지 않는 폴더입니다. id=" + id));
+    }
+
+    /** 폴더·태그가 테스트케이스와 같은 프로젝트에 속하는지 검증한다(데이터 격리 무결성). */
+    private void validateProjectScope(Long projectId, TestFolder folder, List<AreaTag> areaTags) {
+        if (folder != null && !ProjectScope.compatible(projectId, folder.getProjectId())) {
+            throw new InvalidRequestException("다른 프로젝트의 폴더로는 이동할 수 없습니다. folderId=" + folder.getId());
+        }
+        List<Long> mismatched = areaTags.stream()
+                .filter(tag -> !ProjectScope.compatible(projectId, tag.getProjectId()))
+                .map(AreaTag::getId).toList();
+        if (!mismatched.isEmpty()) {
+            throw new InvalidRequestException("다른 프로젝트의 태그는 사용할 수 없습니다: " + mismatched);
+        }
     }
 
     private List<AreaTag> loadAreaTags(List<Long> areaTagIds) {

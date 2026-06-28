@@ -76,6 +76,24 @@ public class AttachmentController {
         return ResponseEntity.created(URI.create("/api/attachments/" + response.id())).body(response);
     }
 
+    @GetMapping("/api/test-runs/{runId}/items/{itemId}/attachments")
+    public List<AttachmentResponse> getExecutionItemAttachments(
+            @PathVariable Long runId,
+            @PathVariable Long itemId
+    ) {
+        return attachmentService.getList(AttachmentEntityType.EXECUTION_ITEM, itemId);
+    }
+
+    @PostMapping("/api/test-runs/{runId}/items/{itemId}/attachments")
+    public ResponseEntity<AttachmentResponse> uploadToExecutionItem(
+            @PathVariable Long runId,
+            @PathVariable Long itemId,
+            @RequestParam("file") MultipartFile file
+    ) {
+        AttachmentResponse response = attachmentService.upload(AttachmentEntityType.EXECUTION_ITEM, itemId, file);
+        return ResponseEntity.created(URI.create("/api/attachments/" + response.id())).body(response);
+    }
+
     @GetMapping("/api/attachments/{id}/download")
     public ResponseEntity<Resource> download(@PathVariable Long id) {
         AttachmentResponse meta = attachmentService.get(id);

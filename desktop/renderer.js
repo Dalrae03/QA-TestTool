@@ -952,6 +952,49 @@ async function renderDashboardRuns() {
     `<span class="suite-run-chip block">차단 ${sum.blocked}</span>` +
     (sum.retest ? `<span class="suite-run-chip retest">재테스트 ${sum.retest}</span>` : "") +
     `<span class="suite-run-prog" style="margin-left:4px">미실행 ${sum.untested}</span>`;
+
+  renderDashboardRunList(g("dashRunList"), runs);
+}
+
+// 테스트런별 상황 — 각 런을 진행바·집계와 함께 한 줄로. 클릭하면 해당 런 화면으로 이동.
+const DASH_RUN_STATUS = {
+  IN_PROGRESS: { cls: "b-ready", label: "진행 중" },
+  COMPLETED:   { cls: "b-done",  label: "완료" }
+};
+function renderDashboardRunList(listEl, runs) {
+  if (!listEl) return;
+  listEl.innerHTML = runs.map(r => {
+    const total = r.total || 0;
+    const executed = total - (r.untested || 0);
+    const pct = typeof r.progressPct === "number" ? r.progressPct : (total ? Math.round((executed / total) * 100) : 0);
+    const passRate = executed ? Math.round(((r.passed || 0) / executed) * 100) : 0;
+    const st = DASH_RUN_STATUS[r.status] || { cls: "b-tag", label: r.status || "-" };
+    const seg = (n, cls) => n > 0 ? `<div class="bar-seg ${cls}" style="width:${(n / total) * 100}%"></div>` : "";
+    const bar = total === 0 ? "" :
+      seg(r.passed, "pass") + seg(r.failed, "fail") + seg(r.blocked, "block") + seg(r.retest, "retest");
+    return `<div class="dash-runlist-item" onclick="openRunFromDashboard(${r.id})">` +
+        `<div class="dash-runlist-head">` +
+          `<span class="dash-runlist-name" title="${escapeHtml(r.name || "")}">${escapeHtml(r.name || "(이름 없음)")}</span>` +
+          `<span class="badge ${st.cls}">${st.label}</span>` +
+          `<span class="dash-runlist-prog">${pct}%</span>` +
+        `</div>` +
+        `<div class="suite-run-bar dash-runlist-bar">${bar}</div>` +
+        `<div class="dash-runlist-meta">` +
+          `<span class="suite-run-chip pass">통과 ${r.passed || 0}</span>` +
+          `<span class="suite-run-chip fail">실패 ${r.failed || 0}</span>` +
+          `<span class="suite-run-chip block">차단 ${r.blocked || 0}</span>` +
+          (r.retest ? `<span class="suite-run-chip retest">재테스트 ${r.retest}</span>` : "") +
+          `<span class="suite-run-prog">미실행 ${r.untested || 0}</span>` +
+          `<span class="dash-runlist-passrate">통과율 ${passRate}%</span>` +
+        `</div>` +
+      `</div>`;
+  }).join("");
+}
+
+// 대시보드에서 특정 테스트런 클릭 → 테스트런 화면으로 이동하며 해당 런을 연다.
+function openRunFromDashboard(id) {
+  state.selectedExecutionId = id;
+  switchView("runs");
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2313,17 +2356,21 @@ function _renderGroupedBySubFolders(filtered, parentFolderId) {
   }
 }
 
-function renderList() {
-  elements.list.innerHTML = "";
+// 현재 검색/상태/폴더 필터를 모두 적용한 '화면에 보이는' 테스트케이스 목록.
+function getFilteredTestCases() {
   let filtered = sortTestCases(applyFilters(state.testCases));
-
-  // 폴더 필터
   if (state.selectedFolderId === "unclassified") {
     filtered = filtered.filter(tc => !state.folderAssignments[String(tc.id)]);
   } else if (state.selectedFolderId && state.selectedFolderId !== "all") {
     const allIds = [state.selectedFolderId, ...getAllSubFolderIds(state.selectedFolderId)];
     filtered = filtered.filter(tc => allIds.includes(state.folderAssignments[String(tc.id)]));
   }
+  return filtered;
+}
+
+function renderList() {
+  elements.list.innerHTML = "";
+  let filtered = getFilteredTestCases();
 
   if (elements.mainSearchCount) elements.mainSearchCount.textContent = `${filtered.length}개`;
   if (filtered.length === 0) {
@@ -3341,6 +3388,11 @@ function caseDetailDefectsHtml(defects) {
 async function renderCaseDetailBody(bodyEl, item) {
   bodyEl.innerHTML = `<div class="case-detail-loading">불러오는 중…</div>`;
   let tc, attachments;
+  const execId = state.currentExec?.id;
+  // 이 실행 아이템에 직접 매단 첨부(실패 증거 등) — 케이스 자체 첨부와 별개.
+  const itemAttachments = execId
+    ? await request(`/api/test-runs/${execId}/items/${item.id}/attachments`, { method: "GET" }).catch(() => [])
+    : [];
   try {
     tc = await fetchTestCaseDetail(item.testCaseId);
     attachments = await request(`/api/testcases/${item.testCaseId}/attachments`, { method: "GET" }).catch(() => []);
@@ -3362,8 +3414,12 @@ async function renderCaseDetailBody(bodyEl, item) {
     caseDetailDefectsHtml(tc.defects) +
     `<div class="case-detail-field"><strong>첨부파일</strong><div class="case-detail-attachments"></div></div>` +
     (item.comment ? `<div class="case-detail-field"><strong>비고</strong><p>${escapeHtml(item.comment)}</p></div>` : "") +
-    (item.failureReason ? `<div class="case-detail-failure"><strong>${escapeHtml(REASON_REQUIRED_LABEL[item.status] || "사유")}</strong><p>${escapeHtml(item.failureReason)}</p></div>` : "");
+    (item.failureReason ? `<div class="case-detail-failure"><strong>${escapeHtml(REASON_REQUIRED_LABEL[item.status] || "사유")}</strong><p>${escapeHtml(item.failureReason)}</p></div>` : "") +
+    (execId ? `<div class="case-detail-field"><strong>실행 첨부 (증거)</strong><div class="case-detail-item-attachments"></div></div>` : "");
   renderAttachmentList(bodyEl.querySelector(".case-detail-attachments"), attachments, () => renderCaseDetailBody(bodyEl, item));
+  if (execId) {
+    renderAttachmentList(bodyEl.querySelector(".case-detail-item-attachments"), itemAttachments, () => renderCaseDetailBody(bodyEl, item));
+  }
 }
 
 // 실행 결과 행 한 줄 — 초기 렌더와 기록 후 인플레이스 교체에서 공용으로 쓴다.
@@ -3909,6 +3965,10 @@ async function bootstrap() {
   await migrateLocalStorageFolders(); // localStorage → DB 최초 1회 마이그레이션
   await loadFolders();            // DB에서 폴더 트리 로드
   renderFolderTree(); renderFolderSelect(); renderList();
+
+  // 백업 설정 UI 반영 + 필요 시 자동 백업(백엔드 연결 후, 실패해도 앱엔 영향 없음)
+  renderBackupSettings();
+  maybeAutoBackup().catch(() => {});
 }
 
 // ── 사이드바 리사이즈 ─────────────────────────────────────────────
@@ -4133,6 +4193,283 @@ async function doExcelImport() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// 엑셀 내보내기 (테스트케이스/테스트런/결함/플랜 + 필터링)
+// ══════════════════════════════════════════════════════════════════
+
+let _exportFormat = "xlsx"; // "xlsx" | "csv"
+
+function setExportFormat(fmt) {
+  _exportFormat = fmt === "csv" ? "csv" : "xlsx";
+  document.querySelectorAll("#exportFormatToggle .export-format-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.fmt === _exportFormat);
+  });
+  updateExportHint();
+}
+
+function openExportModal() {
+  // 필터링된 결과 옵션에 현재 보이는 개수를 표시
+  const hint = document.getElementById("exportFilteredHint");
+  try {
+    const n = getFilteredTestCases().length;
+    if (hint) hint.textContent = `현재 목록에 보이는 케이스만 (${n}건)`;
+  } catch (_e) { /* 무시 */ }
+  // 체크박스 변경 시 안내 문구 갱신 (한 번만 바인딩)
+  document.querySelectorAll("#exportModal .export-check").forEach(c => {
+    if (!c.dataset.bound) { c.addEventListener("change", updateExportHint); c.dataset.bound = "1"; }
+  });
+  setExportFormat(_exportFormat);
+  updateExportHint();
+  document.getElementById("exportModal").hidden = false;
+}
+
+function closeExportModal() {
+  document.getElementById("exportModal").hidden = true;
+}
+
+// 단일 항목 이름/엔드포인트 매핑 (단일 선택 시 파일명·경로용)
+const EXPORT_META = {
+  "test-cases":          { endpoint: "test-cases",  name: "테스트케이스" },
+  "test-cases-filtered": { endpoint: "test-cases",  name: "테스트케이스_필터" },
+  "test-runs":           { endpoint: "test-runs",   name: "테스트런결과" },
+  "defects":             { endpoint: "defects",     name: "결함목록" },
+  "test-plans":          { endpoint: "test-plans",  name: "테스트플랜구조" }
+};
+
+function getCheckedExportTypes() {
+  return [...document.querySelectorAll("#exportModal .export-check:checked")].map(c => c.value);
+}
+
+// 선택 개수/형식에 따른 안내 문구 갱신
+function updateExportHint() {
+  const hint = document.getElementById("exportComboHint");
+  if (!hint) return;
+  const types = getCheckedExportTypes();
+  const fmt = _exportFormat;
+  if (types.length <= 1) { hint.textContent = ""; return; }
+  hint.textContent = fmt === "csv"
+    ? `여러 항목 → CSV ${types.length}개를 ZIP 한 파일로 묶어 내보냅니다.`
+    : `여러 항목 → 엑셀 한 파일에 시트 ${types.length}개로 내보냅니다.`;
+}
+
+// 선택된 항목들을 내보낸다(다중 선택 지원).
+async function runExport() {
+  if (!window.desktopApi?.downloadAttachment) {
+    _toast("이 환경에서는 내보내기를 지원하지 않습니다.", true);
+    return;
+  }
+  const types = getCheckedExportTypes();
+  if (types.length === 0) { _toast("내보낼 항목을 1개 이상 선택하세요.", true); return; }
+
+  state.apiBaseUrl = getApiBaseUrl();
+  const pid = state.currentProjectId;
+  const fmt = _exportFormat;
+  const stamp = new Date().toISOString().slice(0, 10);
+
+  // 필터링 항목이 포함되면 현재 보이는 케이스 ID를 함께 전달
+  let ids = null;
+  if (types.includes("test-cases-filtered")) {
+    ids = getFilteredTestCases().map(tc => tc.id);
+    if (ids.length === 0) { _toast("필터링된 테스트케이스가 없습니다.", true); return; }
+  }
+
+  const params = [];
+  if (pid) params.push(`projectId=${pid}`);
+  params.push(`format=${fmt}`);
+  if (ids) params.push(`ids=${ids.join(",")}`);
+
+  let path, suggestedName;
+  if (types.length === 1) {
+    // 단일 선택 → 기존 단일 파일 엔드포인트 사용
+    const meta = EXPORT_META[types[0]];
+    path = `/api/export/${meta.endpoint}/excel?${params.join("&")}`;
+    suggestedName = `${meta.name}_${stamp}.${fmt}`;
+  } else {
+    // 다중 선택 → 결합 엔드포인트 (xlsx=멀티시트 / csv=zip)
+    params.push(`types=${types.join(",")}`);
+    path = `/api/export/combined?${params.join("&")}`;
+    const ext = fmt === "csv" ? "zip" : "xlsx";
+    suggestedName = `tms-export_${stamp}.${ext}`;
+  }
+
+  const btn = document.getElementById("exportRunBtn");
+  const prev = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = "내보내는 중…"; }
+  try {
+    const res = await window.desktopApi.downloadAttachment({
+      url: `${state.apiBaseUrl}${path}`,
+      suggestedName
+    });
+    if (res?.canceled) return;
+    if (!res?.ok) { _toast(`내보내기 실패: ${res?.data?.message || "HTTP " + res?.status}`, true); return; }
+    _toast(`${types.length}개 항목을 저장했습니다.`);
+    closeExportModal();
+  } catch (e) { _toast(`내보내기 실패: ${e.message}`, true); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = prev; } }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 데이터 백업 / 복구
+// ══════════════════════════════════════════════════════════════════
+
+// 전체 데이터 + 첨부파일을 zip 백업으로 내려받는다.
+async function downloadDataBackup() {
+  if (!window.desktopApi?.downloadBackup) {
+    _toast("이 환경에서는 백업을 지원하지 않습니다.", true);
+    return;
+  }
+  const btn = document.getElementById("backupExportBtn");
+  const prev = btn.textContent;
+  btn.disabled = true; btn.textContent = "백업 생성 중…";
+  state.apiBaseUrl = getApiBaseUrl();
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "").replace(/(\d{8})(\d{6})/, "$1-$2");
+  try {
+    const res = await window.desktopApi.downloadBackup({
+      url: `${state.apiBaseUrl}/api/backup/export`,
+      suggestedName: `tms-backup-${stamp}.zip`
+    });
+    if (res?.canceled) return;
+    if (!res?.ok) { _toast(`백업 실패: ${res?.data?.message || "HTTP " + res?.status}`, true); return; }
+    _toast("백업 파일을 저장했습니다.");
+  } catch (e) { _toast(`백업 실패: ${e.message}`, true); }
+  finally { btn.disabled = false; btn.textContent = prev; }
+}
+
+// 백업 zip 을 선택해 전체 데이터를 복구한다(파괴적이므로 이중 확인).
+async function restoreDataBackup() {
+  if (!window.desktopApi?.uploadBackup) {
+    _toast("이 환경에서는 복구를 지원하지 않습니다.", true);
+    return;
+  }
+  const ok = window.confirm(
+    "⚠ 백업으로 복구하면 현재 모든 데이터와 첨부파일이 백업 시점 상태로 완전히 덮어쓰기 됩니다.\n" +
+    "이 작업은 되돌릴 수 없습니다. 계속할까요?");
+  if (!ok) return;
+
+  const btn = document.getElementById("backupRestoreBtn");
+  const prev = btn.textContent;
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    const res = await window.desktopApi.uploadBackup({ url: `${state.apiBaseUrl}/api/backup/import` });
+    if (res?.canceled) return;
+    // 파일 선택 후에야 복구가 시작되므로, 선택 이후부터 버튼 상태를 바꾼다.
+    btn.disabled = true; btn.textContent = "복구 중…";
+    if (!res?.ok) { _toast(`복구 실패: ${res?.data?.message || "HTTP " + res?.status}`, true); return; }
+    const d = res.data || {};
+    _toast(`복구 완료 — 테이블 ${d.tables ?? "?"}개 · 행 ${d.rows ?? "?"}건 · 첨부 ${d.files ?? 0}개`);
+    // 화면 데이터를 새로 불러온다.
+    await reloadAfterRestore();
+  } catch (e) { _toast(`복구 실패: ${e.message}`, true); }
+  finally { btn.disabled = false; btn.textContent = prev; }
+}
+
+// 복구 후 현재 화면/상태를 백엔드 기준으로 새로고침한다.
+async function reloadAfterRestore() {
+  try {
+    await loadProjects?.();
+    await loadTestCases?.();
+    await loadFolders?.();
+    renderFolderTree?.(); renderFolderSelect?.(); renderList?.();
+    if (typeof renderDashboard === "function") renderDashboard();
+  } catch (_e) { /* 개별 로더 실패는 무시 — 사용자가 화면 전환 시 재조회된다 */ }
+}
+
+// ── 백업 설정(기본 폴더 · 자동 백업 · 보관) ────────────────────────
+const BACKUP_SETTINGS_KEY = "tms.backupSettings";
+
+function getBackupSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BACKUP_SETTINGS_KEY) || "{}");
+    return {
+      dir: raw.dir || "",
+      autoEnabled: !!raw.autoEnabled,
+      intervalDays: Number(raw.intervalDays) > 0 ? Number(raw.intervalDays) : 1,
+      keepCount: Number(raw.keepCount) > 0 ? Number(raw.keepCount) : 7,
+      lastBackupAt: raw.lastBackupAt || null
+    };
+  } catch (_e) {
+    return { dir: "", autoEnabled: false, intervalDays: 1, keepCount: 7, lastBackupAt: null };
+  }
+}
+
+function setBackupSettings(patch) {
+  const next = { ...getBackupSettings(), ...patch };
+  localStorage.setItem(BACKUP_SETTINGS_KEY, JSON.stringify(next));
+  return next;
+}
+
+// 설정값을 설정 화면 UI에 반영
+function renderBackupSettings() {
+  const s = getBackupSettings();
+  const dirEl = document.getElementById("backupDirInput");
+  if (!dirEl) return; // 설정 화면이 아직 없으면 무시
+  dirEl.value = s.dir || "";
+  document.getElementById("backupAutoEnabled").checked = s.autoEnabled;
+  document.getElementById("backupIntervalDays").value = s.intervalDays;
+  document.getElementById("backupKeepCount").value = s.keepCount;
+  document.getElementById("backupNowBtn").disabled = !s.dir;
+  const lastEl = document.getElementById("backupLastAt");
+  if (lastEl) lastEl.textContent = s.lastBackupAt ? formatDateTime(s.lastBackupAt) : "없음";
+}
+
+// UI 입력값을 읽어 저장
+function saveBackupSettingsFromUI() {
+  const intervalDays = Math.max(1, Math.min(365, Number(document.getElementById("backupIntervalDays").value) || 1));
+  const keepCount = Math.max(1, Math.min(100, Number(document.getElementById("backupKeepCount").value) || 7));
+  setBackupSettings({
+    autoEnabled: document.getElementById("backupAutoEnabled").checked,
+    intervalDays,
+    keepCount
+  });
+  renderBackupSettings();
+}
+
+async function chooseBackupDir() {
+  if (!window.desktopApi?.chooseDirectory) { _toast("이 환경에서는 폴더 선택을 지원하지 않습니다.", true); return; }
+  try {
+    const res = await window.desktopApi.chooseDirectory({ title: "기본 백업 폴더 선택", defaultPath: getBackupSettings().dir || undefined });
+    if (res?.canceled || !res?.dir) return;
+    setBackupSettings({ dir: res.dir });
+    renderBackupSettings();
+    _toast("기본 백업 폴더를 설정했습니다.");
+  } catch (e) { _toast(`폴더 선택 실패: ${e.message}`, true); }
+}
+
+// 기본 폴더에 즉시 백업(다이얼로그 없음) + 보관 정리
+async function backupNowToDir(silent = false) {
+  const s = getBackupSettings();
+  if (!s.dir) { if (!silent) _toast("먼저 기본 백업 폴더를 지정하세요.", true); return false; }
+  if (!window.desktopApi?.saveBackupToDir) { if (!silent) _toast("이 환경에서는 폴더 백업을 지원하지 않습니다.", true); return false; }
+  state.apiBaseUrl = getApiBaseUrl();
+  const btn = document.getElementById("backupNowBtn");
+  const prev = btn?.textContent;
+  if (btn && !silent) { btn.disabled = true; btn.textContent = "백업 중…"; }
+  try {
+    const res = await window.desktopApi.saveBackupToDir({
+      url: `${state.apiBaseUrl}/api/backup/export`,
+      dir: s.dir,
+      keepCount: s.keepCount
+    });
+    if (!res?.ok) { if (!silent) _toast(`백업 실패: ${res?.data?.message || "HTTP " + res?.status}`, true); return false; }
+    setBackupSettings({ lastBackupAt: new Date().toISOString() });
+    renderBackupSettings();
+    const extra = res.deleted ? ` (오래된 백업 ${res.deleted}개 정리)` : "";
+    _toast(`${silent ? "자동 " : ""}백업 완료${extra}`);
+    return true;
+  } catch (e) { if (!silent) _toast(`백업 실패: ${e.message}`, true); return false; }
+  finally { if (btn && !silent && prev !== undefined) { btn.disabled = !s.dir; btn.textContent = prev; } }
+}
+
+// 앱 시작 시: 자동 백업이 켜져 있고 마지막 백업이 설정 주기보다 오래됐으면 조용히 백업
+async function maybeAutoBackup() {
+  const s = getBackupSettings();
+  if (!s.autoEnabled || !s.dir) return;
+  const last = s.lastBackupAt ? new Date(s.lastBackupAt).getTime() : 0;
+  const elapsedDays = (Date.now() - last) / (1000 * 60 * 60 * 24);
+  if (elapsedDays < s.intervalDays) return;
+  await backupNowToDir(true);
+}
+
+// ══════════════════════════════════════════════════════════════════
 // 대시보드 감사 로그 + 히트맵 (#13)
 // ══════════════════════════════════════════════════════════════════
 
@@ -4184,6 +4521,8 @@ function renderDashboardAuditLogsFromStats(stats) {
 // ══════════════════════════════════════════════════════════════════
 
 let _failureCallback = null;
+// 현재 사유 모달이 첨부파일을 매달 실행 아이템 컨텍스트 — { execId, itemId } 또는 null.
+let _failureAttachCtx = null;
 
 // 실패/차단/재테스트 공통 사유 모달 — 결과별로 제목/문구만 바꿔서 재사용한다.
 const REASON_MODAL_META = {
@@ -4192,20 +4531,49 @@ const REASON_MODAL_META = {
   RETEST:  { title: "🔁 재테스트 사유 입력", desc: "재테스트가 필요한 이유를 입력하세요.",               confirmLabel: "재테스트로 기록" }
 };
 
-function openFailureReasonModal(callback, kind = "FAILED") {
+function openFailureReasonModal(callback, kind = "FAILED", attachCtx = null) {
   _failureCallback = callback;
+  _failureAttachCtx = attachCtx;
   const meta = REASON_MODAL_META[kind] || REASON_MODAL_META.FAILED;
   document.getElementById("failureReasonTitle").textContent = meta.title;
   document.getElementById("failureReasonDesc").textContent = meta.desc;
   document.getElementById("failureReasonConfirmBtn").textContent = meta.confirmLabel;
   document.getElementById("failureReasonInput").value = "";
   document.getElementById("failureReasonError").hidden = true;
+  const attachSection = document.getElementById("failureReasonAttachSection");
+  // 실행 아이템이 식별 가능할 때만 첨부 영역을 노출한다.
+  if (attachCtx && attachCtx.execId && attachCtx.itemId) {
+    attachSection.hidden = false;
+    loadFailureReasonAttachments();
+  } else {
+    attachSection.hidden = true;
+    document.getElementById("failureReasonAttachList").innerHTML = "";
+  }
   document.getElementById("failureReasonModal").style.display = "flex";
+}
+
+async function loadFailureReasonAttachments() {
+  const list = document.getElementById("failureReasonAttachList");
+  if (!_failureAttachCtx) { list.innerHTML = ""; return; }
+  const { execId, itemId } = _failureAttachCtx;
+  try {
+    const items = await request(`/api/test-runs/${execId}/items/${itemId}/attachments`, { method: "GET" });
+    renderAttachmentList(list, items, loadFailureReasonAttachments);
+  } catch (e) {
+    list.innerHTML = `<p style="font-size:12px;color:var(--c-hi)">첨부파일을 불러오지 못했습니다.</p>`;
+  }
+}
+
+async function uploadFailureReasonAttachment() {
+  if (!_failureAttachCtx) return;
+  const { execId, itemId } = _failureAttachCtx;
+  await uploadAttachmentTo(`/api/test-runs/${execId}/items/${itemId}/attachments`, loadFailureReasonAttachments);
 }
 
 function cancelFailureReason() {
   document.getElementById("failureReasonModal").style.display = "none";
   _failureCallback = null;
+  _failureAttachCtx = null;
 }
 
 function confirmFailureReason() {
@@ -4214,6 +4582,7 @@ function confirmFailureReason() {
   document.getElementById("failureReasonModal").style.display = "none";
   if (_failureCallback) _failureCallback(reason);
   _failureCallback = null;
+  _failureAttachCtx = null;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4336,6 +4705,7 @@ async function selectSuiteInManager(id) {
   document.getElementById("suiteEditorEmpty").hidden = true;
   document.getElementById("suiteEditorForm").hidden = false;
   document.getElementById("smDeleteBtn").hidden = false;
+  document.getElementById("smExportBtn").hidden = false;
   await initTcPicker();
 }
 
@@ -4349,6 +4719,7 @@ function startNewSuite() {
   document.getElementById("suiteEditorEmpty").hidden = true;
   document.getElementById("suiteEditorForm").hidden = false;
   document.getElementById("smDeleteBtn").hidden = true;
+  document.getElementById("smExportBtn").hidden = true;
   initTcPicker();
 }
 
@@ -4374,6 +4745,29 @@ async function saveSuiteFromManager() {
     // 새 런 모달 스위트 드롭다운도 갱신
     await populateRunSuiteSelect(null);
   } catch (e) { _toast(`저장 실패: ${e.message}`, true); }
+}
+
+// 선택한 스위트를 엑셀(.xlsx)로 내보내 사용자가 지정한 위치에 저장한다.
+// 기존 첨부 다운로드 IPC(인증 헤더 포함 GET → 파일 저장)를 그대로 재사용한다.
+async function exportSuiteToExcel() {
+  const id = document.getElementById("smSuiteId").value;
+  if (!id) { _toast("먼저 스위트를 선택하세요.", true); return; }
+  if (!window.desktopApi?.downloadAttachment) {
+    _toast("이 환경에서는 파일 다운로드를 지원하지 않습니다.", true);
+    return;
+  }
+  const name = (document.getElementById("smSuiteName").value.trim() || "test-suite")
+    .replace(/[\\/:*?"<>|]/g, "_");
+  state.apiBaseUrl = getApiBaseUrl();
+  try {
+    const res = await window.desktopApi.downloadAttachment({
+      url: `${state.apiBaseUrl}/api/suites/${id}/export/excel`,
+      suggestedName: `${name}.xlsx`
+    });
+    if (res?.canceled) return;
+    if (!res?.ok) { _toast(`다운로드 실패: ${res?.data?.message || "HTTP " + res?.status}`, true); return; }
+    _toast("엑셀 파일을 저장했습니다.");
+  } catch (e) { _toast(`다운로드 실패: ${e.message}`, true); }
 }
 
 async function deleteSuiteFromManager() {
@@ -4741,9 +5135,11 @@ window._patchedBuildRunItemRow = function(item, isCompleted) {
         // 이미 같은 상태 → 미실행으로 되돌림 (사유 모달 불필요)
         recordExecutionItemWithReason(row, "UNTESTED", note?.value?.trim(), "");
       } else {
+        const itemId = Number(row.dataset.itemId);
+        const execId = state.currentExec?.id;
         openFailureReasonModal((reason) => {
           recordExecutionItemWithReason(row, status, note?.value?.trim(), reason);
-        }, status);
+        }, status, execId && itemId ? { execId, itemId } : null);
       }
     });
   });

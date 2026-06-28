@@ -1,5 +1,7 @@
 package com.tms.configuration.service;
 
+import com.tms.audit.entity.AuditAction;
+import com.tms.audit.service.AuditLogService;
 import com.tms.configuration.dto.TestConfigurationRequest;
 import com.tms.configuration.dto.TestConfigurationResponse;
 import com.tms.configuration.entity.TestConfiguration;
@@ -20,15 +22,18 @@ public class TestConfigurationService {
     private final TestConfigurationRepository configurationRepository;
     private final ServerEnvironmentRepository serverEnvironmentRepository;
     private final TestCaseRepository testCaseRepository;
+    private final AuditLogService auditLogService;
 
     public TestConfigurationService(
             TestConfigurationRepository configurationRepository,
             ServerEnvironmentRepository serverEnvironmentRepository,
-            TestCaseRepository testCaseRepository
+            TestCaseRepository testCaseRepository,
+            AuditLogService auditLogService
     ) {
         this.configurationRepository = configurationRepository;
         this.serverEnvironmentRepository = serverEnvironmentRepository;
         this.testCaseRepository = testCaseRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<TestConfigurationResponse> getAll() {
@@ -50,7 +55,10 @@ public class TestConfigurationService {
                 request.device(), request.runtimeVersion(), request.dbVersion(),
                 request.active()
         );
-        return TestConfigurationResponse.from(configurationRepository.save(configuration));
+        TestConfiguration saved = configurationRepository.save(configuration);
+        auditLogService.log(AuditLogService.CONFIGURATION, saved.getId(), AuditAction.CREATED,
+                "Configuration '" + saved.getName() + "'이(가) 생성되었습니다.");
+        return TestConfigurationResponse.from(saved);
     }
 
     @Transactional
@@ -64,6 +72,8 @@ public class TestConfigurationService {
                 request.device(), request.runtimeVersion(), request.dbVersion(),
                 request.active()
         );
+        auditLogService.log(AuditLogService.CONFIGURATION, id, AuditAction.UPDATED,
+                "Configuration '" + configuration.getName() + "'이(가) 수정되었습니다.");
         return TestConfigurationResponse.from(configuration);
     }
 
@@ -73,6 +83,8 @@ public class TestConfigurationService {
         testCaseRepository.findAllByTestConfigurationId(id)
                 .forEach(testCase -> testCase.changeTestConfiguration(null));
         configurationRepository.delete(configuration);
+        auditLogService.log(AuditLogService.CONFIGURATION, id, AuditAction.DELETED,
+                "Configuration '" + configuration.getName() + "'이(가) 삭제되었습니다.");
     }
 
     @Transactional
