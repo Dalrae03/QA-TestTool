@@ -68,14 +68,24 @@ public class ExcelImportService {
 
     private final TestCaseRepository testCaseRepository;
     private final TestFolderRepository testFolderRepository;
+    private final com.tms.audit.service.AuditLogService auditLogService;
 
     public ExcelImportService(TestCaseRepository testCaseRepository,
-                               TestFolderRepository testFolderRepository) {
+                               TestFolderRepository testFolderRepository,
+                               com.tms.audit.service.AuditLogService auditLogService) {
         this.testCaseRepository = testCaseRepository;
         this.testFolderRepository = testFolderRepository;
+        this.auditLogService = auditLogService;
     }
 
     public record ImportResult(int createdFolders, int createdCases, List<String> errors) {}
+
+    private void logImport(String kind, String filename, ImportResult result) {
+        auditLogService.log(com.tms.audit.service.AuditLogService.IMPORT, 0L,
+                com.tms.audit.entity.AuditAction.IMPORTED,
+                kind + " 가져오기 '" + filename + "': 테스트케이스 " + result.createdCases()
+                        + "건, 폴더 " + result.createdFolders() + "개 생성");
+    }
 
     public ImportResult importExcel(InputStream inputStream, String filename, Long projectId) throws Exception {
         int createdFolders = 0;
@@ -122,7 +132,123 @@ public class ExcelImportService {
             }
         }
 
-        return new ImportResult(createdFolders, createdCases, errors);
+        ImportResult result = new ImportResult(createdFolders, createdCases, errors);
+        logImport("Excel", filename, result);
+        return result;
+    }
+
+    /** CSV 의 폴더 지정 컬럼으로 인식할 헤더(소문자). */
+    private static final java.util.Set<String> FOLDER_HEADERS = java.util.Set.of("폴더", "folder", "시트", "sheet");
+
+    /** CSV 가져오기 — 파일명을 루트 폴더로, '폴더' 컬럼이 있으면 그 값별로 하위 폴더를 만든다. */
+    public ImportResult importCsv(InputStream inputStream, String filename, Long projectId) throws Exception {
+        int createdFolders = 0;
+        int createdCases = 0;
+        List<String> errors = new ArrayList<>();
+
+        String rootFolderName = filename.replaceAll("\\.[^.]+$", "");
+        TestFolder rootFolder = testFolderRepository.save(new TestFolder(rootFolderName, null, projectId));
+        createdFolders++;
+
+        List<List<String>> table = parseCsv(inputStream);
+        if (table.isEmpty()) {
+            ImportResult empty = new ImportResult(createdFolders, createdCases, errors);
+            logImport("CSV", filename, empty);
+            return empty;
+        }
+
+        // 헤더 → 필드 매핑 + 폴더 컬럼 탐지
+        List<String> header = table.get(0);
+        Map<Integer, String> colMap = new HashMap<>();
+        int folderCol = -1;
+        for (int i = 0; i < header.size(); i++) {
+            String h = header.get(i) != null ? header.get(i).toLowerCase().trim() : "";
+            if (FOLDER_HEADERS.contains(h)) { folderCol = i; continue; }
+            String field = COLUMN_ALIASES.get(h);
+            if (field != null) colMap.put(i, field);
+        }
+
+        Map<String, TestFolder> subFolders = new HashMap<>();
+        for (int r = 1; r < table.size(); r++) {
+            List<String> cells = table.get(r);
+            if (isCsvRowEmpty(cells)) continue;
+            try {
+                Map<String, String> values = new HashMap<>();
+                colMap.forEach((idx, field) -> {
+                    if (idx < cells.size() && cells.get(idx) != null) values.put(field, cells.get(idx).trim());
+                });
+
+                TestFolder folder = rootFolder;
+                if (folderCol >= 0 && folderCol < cells.size()) {
+                    String fname = cells.get(folderCol) != null ? cells.get(folderCol).trim() : "";
+                    if (!fname.isBlank()) {
+                        TestFolder sub = subFolders.get(fname);
+                        if (sub == null) {
+                            sub = testFolderRepository.save(new TestFolder(fname, rootFolder, projectId));
+                            subFolders.put(fname, sub);
+                            createdFolders++;
+                        }
+                        folder = sub;
+                    }
+                }
+
+                TestCase tc = buildTestCase(values, folder);
+                if (tc != null) {
+                    tc.setProjectId(projectId);
+                    testCaseRepository.save(tc);
+                    createdCases++;
+                }
+            } catch (Exception e) {
+                errors.add((r + 1) + "행: " + e.getMessage());
+            }
+        }
+        ImportResult result = new ImportResult(createdFolders, createdCases, errors);
+        logImport("CSV", filename, result);
+        return result;
+    }
+
+    /** RFC4180 CSV 파서(따옴표·내부 콤마/개행 처리). UTF-8 BOM 은 제거한다. */
+    private List<List<String>> parseCsv(InputStream inputStream) throws java.io.IOException {
+        String content = new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        if (content.startsWith("﻿")) content = content.substring(1);
+
+        List<List<String>> rows = new ArrayList<>();
+        List<String> cur = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (inQuotes) {
+                if (c == '"') {
+                    if (i + 1 < content.length() && content.charAt(i + 1) == '"') { field.append('"'); i++; }
+                    else inQuotes = false;
+                } else {
+                    field.append(c);
+                }
+            } else {
+                if (c == '"') {
+                    inQuotes = true;
+                } else if (c == ',') {
+                    cur.add(field.toString()); field.setLength(0);
+                } else if (c == '\n') {
+                    cur.add(field.toString()); field.setLength(0); rows.add(cur); cur = new ArrayList<>();
+                } else if (c != '\r') {
+                    field.append(c);
+                }
+            }
+        }
+        if (field.length() > 0 || !cur.isEmpty()) {
+            cur.add(field.toString());
+            rows.add(cur);
+        }
+        return rows;
+    }
+
+    private boolean isCsvRowEmpty(List<String> cells) {
+        for (String c : cells) {
+            if (c != null && !c.isBlank()) return false;
+        }
+        return true;
     }
 
     private Map<Integer, String> buildColumnMap(Row headerRow) {
@@ -145,7 +271,11 @@ public class ExcelImportService {
             Cell cell = row.getCell(colIdx);
             if (cell != null) values.put(field, getCellString(cell));
         });
+        return buildTestCase(values, folder);
+    }
 
+    /** 필드명→값 맵으로 TestCase 를 만든다. 엑셀/CSV 가 공용으로 사용한다. title 이 없으면 null. */
+    private TestCase buildTestCase(Map<String, String> values, TestFolder folder) {
         String title = values.get("title");
         if (title == null || title.isBlank()) return null;
 

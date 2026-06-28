@@ -22,7 +22,7 @@ public record DashboardStatsResponse(
         Map<String, Long> defectsBySeverity,
         Map<String, Long> defectsByStatus,
 
-        // 결함 히트맵 데이터 (#13) — 영역태그 x 결함심각도 매트릭스
+        // 결함 히트맵 데이터 (#13) — 영역태그별 결함(실패) 빈도
         List<HeatmapEntry> defectHeatmap,
 
         // 최근 감사 로그 (#13)
@@ -42,7 +42,6 @@ public record DashboardStatsResponse(
 
     public record HeatmapEntry(
             String areaTag,
-            String severity,
             long count
     ) {}
 

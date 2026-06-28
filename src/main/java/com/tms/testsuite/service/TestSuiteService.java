@@ -1,6 +1,7 @@
 package com.tms.testsuite.service;
 
 import com.tms.global.exception.InvalidRequestException;
+import com.tms.global.util.ProjectScope;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testplan.entity.TestPlan;
@@ -50,7 +51,8 @@ public class TestSuiteService {
     public TestSuiteResponse createSuite(Long planId, TestSuiteRequest request) {
         TestPlan plan = testPlanRepository.findById(planId)
                 .orElseThrow(() -> new EntityNotFoundException("TestPlan not found. id=" + planId));
-        TestSuite suite = new TestSuite(plan, request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        TestSuite suite = new TestSuite(plan, request.name(), request.description(),
+                loadTestCases(request.testCaseIds(), plan.getProjectId()));
         suite.setProjectId(plan.getProjectId());
         return TestSuiteResponse.from(testSuiteRepository.save(suite));
     }
@@ -58,7 +60,8 @@ public class TestSuiteService {
     @Transactional
     public TestSuiteResponse updateSuite(Long planId, Long suiteId, TestSuiteRequest request) {
         TestSuite suite = findInPlan(planId, suiteId);
-        suite.update(request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        suite.update(request.name(), request.description(),
+                loadTestCases(request.testCaseIds(), suite.getProjectId()));
         return TestSuiteResponse.from(suite);
     }
 
@@ -92,7 +95,8 @@ public class TestSuiteService {
 
     @Transactional
     public TestSuiteResponse createStandaloneSuite(TestSuiteRequest request) {
-        TestSuite suite = new TestSuite(request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        TestSuite suite = new TestSuite(request.name(), request.description(),
+                loadTestCases(request.testCaseIds(), request.projectId()));
         suite.setProjectId(request.projectId());
         return TestSuiteResponse.from(testSuiteRepository.save(suite));
     }
@@ -101,7 +105,9 @@ public class TestSuiteService {
     public TestSuiteResponse updateAnySuite(Long suiteId, TestSuiteRequest request) {
         TestSuite suite = testSuiteRepository.findById(suiteId)
                 .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + suiteId));
-        suite.update(request.name(), request.description(), loadTestCases(request.testCaseIds()));
+        Long effectiveProjectId = request.projectId() != null ? request.projectId() : suite.getProjectId();
+        suite.update(request.name(), request.description(),
+                loadTestCases(request.testCaseIds(), effectiveProjectId));
         if (request.projectId() != null) {
             suite.setProjectId(request.projectId());
         }
@@ -122,16 +128,23 @@ public class TestSuiteService {
                 .forEach(suite -> suite.removeTestCase(testCaseId));
     }
 
-    private List<TestCase> loadTestCases(List<Long> ids) {
+    private List<TestCase> loadTestCases(List<Long> ids, Long projectId) {
         if (ids == null || ids.isEmpty()) return List.of();
         List<Long> uniqueIds = new LinkedHashSet<>(ids).stream().toList();
         Map<Long, TestCase> casesById = testCaseRepository.findAllById(uniqueIds).stream()
                 .collect(Collectors.toMap(TestCase::getId, Function.identity()));
         List<Long> missingIds = uniqueIds.stream().filter(id -> !casesById.containsKey(id)).toList();
         if (!missingIds.isEmpty()) {
-            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID: " + missingIds);
+            throw new InvalidRequestException("존재하지 않는 테스트케이스 ID가 포함되어 있습니다: " + missingIds);
         }
-        return uniqueIds.stream().map(casesById::get).toList();
+        List<TestCase> cases = uniqueIds.stream().map(casesById::get).toList();
+        List<Long> mismatched = cases.stream()
+                .filter(tc -> !ProjectScope.compatible(projectId, tc.getProjectId()))
+                .map(TestCase::getId).toList();
+        if (!mismatched.isEmpty()) {
+            throw new InvalidRequestException("다른 프로젝트의 테스트케이스는 스위트에 포함할 수 없습니다: " + mismatched);
+        }
+        return cases;
     }
 
     private TestSuite findInPlan(Long planId, Long suiteId) {

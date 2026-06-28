@@ -4,6 +4,7 @@
 
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -38,16 +39,25 @@ function waitForPort(port, timeoutMs) {
   });
 }
 
+// ── 공유 API 토큰 ─────────────────────────────────────────────────
+// 우리가 백엔드를 직접 띄울 때만 토큰을 생성해 백엔드·Electron에 함께 주입한다.
+// 기존 백엔드를 재사용할 때는 그 백엔드의 설정(환경변수)을 그대로 따른다.
+const reuseBackend = await isPortOpen(BACKEND_PORT);
+const apiToken = reuseBackend
+  ? (process.env.TMS_API_TOKEN ?? '')
+  : (process.env.TMS_API_TOKEN || randomBytes(24).toString('hex'));
+const childEnv = { ...process.env, TMS_API_TOKEN: apiToken };
+
 // ── Spring Boot 기동 ──────────────────────────────────────────────
 let backend = null;
 let backendExit = null;
-if (await isPortOpen(BACKEND_PORT)) {
+if (reuseBackend) {
   console.log(`[dev:start] 기존 백엔드를 사용합니다 (port ${BACKEND_PORT}).`);
 } else {
-  console.log('[dev:start] Spring Boot 기동 중...');
+  console.log('[dev:start] Spring Boot 기동 중... (공유 API 토큰 적용)');
   backend = spawn('mvn', ['spring-boot:run', '-q'], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: childEnv,
   });
 
   backend.stdout.on('data', d => process.stdout.write(`[backend] ${d}`));
@@ -74,7 +84,7 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const electronProfile = join(tmpdir(), 'tms-electron-dev');
 const frontend = spawn(npmCommand, ['run', 'desktop:dev', '--', `--user-data-dir=${electronProfile}`], {
   stdio: 'inherit',
-  env: { ...process.env },
+  env: childEnv,
 });
 
 frontend.on('exit', code => {

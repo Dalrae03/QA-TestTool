@@ -16,10 +16,11 @@ import com.tms.execution.repository.ExecutionRepository;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.repository.TestCaseRepository;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -90,23 +91,31 @@ public class DashboardService {
         Map<String, Long> defectsByStatus = defects.stream()
                 .collect(Collectors.groupingBy(d -> d.getStatus().name(), Collectors.counting()));
 
-        // 결함 히트맵 (#13) — 영역태그 × 심각도
-        List<HeatmapEntry> heatmap = new ArrayList<>();
-        defects.forEach(defect -> {
-            // Defect에 연결된 테스트케이스의 영역태그로 히트맵 구성
-            // (단순화: severity별 결함 분포를 영역태그 없이 severity만으로 구성)
+        // 결함 히트맵 (#13) — 영역태그별 결함(실패) 빈도.
+        // 각 테스트케이스에 연결된 결함을 그 케이스의 영역태그별로 누적하되, 영역 안에서 결함은 중복 없이(distinct) 센다.
+        // testCases 가 이미 프로젝트 범위로 필터링돼 있어 히트맵도 자동으로 프로젝트 스코프를 따른다.
+        Map<String, Set<Long>> defectIdsByArea = new HashMap<>();
+        testCases.forEach(tc -> {
+            if (tc.getDefects().isEmpty() || tc.getAreaTags().isEmpty()) return;
+            List<Long> defectIds = tc.getDefects().stream().map(Defect::getId).toList();
+            tc.getAreaTags().forEach(tag ->
+                    defectIdsByArea.computeIfAbsent(tag.getName(), k -> new HashSet<>()).addAll(defectIds));
         });
-        defectsBySeverity.forEach((sev, cnt) ->
-                heatmap.add(new HeatmapEntry("전체", sev, cnt)));
+        List<HeatmapEntry> heatmap = defectIdsByArea.entrySet().stream()
+                .map(entry -> new HeatmapEntry(entry.getKey(), (long) entry.getValue().size()))
+                .sorted((a, b) -> Long.compare(b.count(), a.count()))
+                .toList();
 
-        // 최근 감사 로그 (#13) — AuditLog 자체에 projectId가 없어, 현재 프로젝트 소속 테스트케이스의 로그만 추려낸다.
-        // (테스트케이스가 삭제된 뒤의 로그는 프로젝트를 판별할 수 없어 제외됨 — 알려진 한계)
+        // 최근 감사 로그 (#13) — TEST_CASE 로그는 현재 프로젝트 소속 케이스만 추리고,
+        // 그 외 타입(테스트런·결함·첨부·설정·백업·가져오기 등)은 프로젝트 매핑이 없어 항상 포함한다.
         java.util.Set<Long> projectTestCaseIds = projectId != null
                 ? testCases.stream().map(TestCase::getId).collect(Collectors.toSet())
                 : null;
         List<AuditLog> logs = auditLogRepository.findAll(
                         Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
-                .filter(log -> projectTestCaseIds == null || projectTestCaseIds.contains(log.getEntityId()))
+                .filter(log -> projectTestCaseIds == null
+                        || !"TEST_CASE".equals(log.getEntityType())
+                        || projectTestCaseIds.contains(log.getEntityId()))
                 .limit(20)
                 .toList();
         List<AuditLogEntry> auditEntries = logs.stream().map(log ->

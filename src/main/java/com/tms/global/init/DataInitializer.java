@@ -35,14 +35,15 @@ public class DataInitializer {
             try {
                 em.createNativeQuery(
                         "UPDATE test_execution_items tei " +
-                        "JOIN test_executions te ON te.id = tei.execution_id " +
                         "SET tei.version_number = (" +
                         "    SELECT tcv.version_number FROM test_case_versions tcv " +
+                        "    JOIN test_executions te ON te.id = tei.execution_id " +
                         "    WHERE tcv.test_case_id = tei.test_case_id AND tcv.created_at <= te.created_at " +
                         "    ORDER BY tcv.created_at DESC LIMIT 1" +
                         "), " +
                         "tei.version_label = (" +
                         "    SELECT tcv.label FROM test_case_versions tcv " +
+                        "    JOIN test_executions te ON te.id = tei.execution_id " +
                         "    WHERE tcv.test_case_id = tei.test_case_id AND tcv.created_at <= te.created_at " +
                         "    ORDER BY tcv.created_at DESC LIMIT 1" +
                         ") " +

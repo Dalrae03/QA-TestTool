@@ -9,5 +9,17 @@ public enum AuditAction {
     DEFECT_UNLINKED,
     VERSION_CREATED,
     VERSION_RESTORED,
-    DELETED
+    DELETED,
+    // 테스트런
+    RESULT_RECORDED,
+    COMPLETED,
+    REOPENED,
+    // 첨부파일
+    ATTACHMENT_ADDED,
+    ATTACHMENT_DELETED,
+    // 설정 / 데이터 작업
+    SETTING_CHANGED,
+    IMPORTED,
+    BACKUP_CREATED,
+    BACKUP_RESTORED
 }

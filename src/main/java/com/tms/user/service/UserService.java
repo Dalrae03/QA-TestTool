@@ -1,5 +1,7 @@
 package com.tms.user.service;
 
+import com.tms.audit.entity.AuditAction;
+import com.tms.audit.service.AuditLogService;
 import com.tms.user.dto.UserRequest;
 import com.tms.user.dto.UserResponse;
 import com.tms.user.entity.TmsUser;
@@ -14,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private final TmsUserRepository userRepository;
+    private final AuditLogService auditLogService;
 
-    public UserService(TmsUserRepository userRepository) {
+    public UserService(TmsUserRepository userRepository, AuditLogService auditLogService) {
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     public List<UserResponse> getAll() {
@@ -39,7 +43,10 @@ public class UserService {
                 request.role(),
                 request.active() == null || request.active()
         );
-        return UserResponse.from(userRepository.save(user));
+        TmsUser saved = userRepository.save(user);
+        auditLogService.log(AuditLogService.USER, saved.getId(), AuditAction.CREATED,
+                "사용자 '" + saved.getName() + "'이(가) 생성되었습니다. (역할 " + saved.getRole() + ")");
+        return UserResponse.from(saved);
     }
 
     @Transactional
@@ -53,12 +60,17 @@ public class UserService {
                 request.role(),
                 request.active() == null || request.active()
         );
+        auditLogService.log(AuditLogService.USER, id, AuditAction.UPDATED,
+                "사용자 '" + user.getName() + "'이(가) 수정되었습니다.");
         return UserResponse.from(user);
     }
 
     @Transactional
     public void deactivate(Long id) {
-        findById(id).deactivate();
+        TmsUser user = findById(id);
+        user.deactivate();
+        auditLogService.log(AuditLogService.USER, id, AuditAction.STATUS_CHANGED,
+                "사용자 '" + user.getName() + "'이(가) 비활성화되었습니다.");
     }
 
     private TmsUser findById(Long id) {

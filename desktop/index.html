@@ -97,6 +97,8 @@
         </div>
         <div class="suite-run-bar" id="dashRunBar" style="margin-top:14px"></div>
         <div class="suite-run-stats" id="dashRunChips"></div>
+        <div class="dash-runlist-ttl">테스트런별 상황</div>
+        <div class="dash-runlist" id="dashRunList"></div>
       </div>
     </div>
     <div class="dash-row2">
@@ -134,7 +136,7 @@
         <div class="detail-card-ttl" style="margin-bottom:0">최근 활동 로그</div>
         <span class="badge b-tag" style="cursor:pointer" onclick="refreshDashboardAuditLogs()">새로고침</span>
       </div>
-      <div id="dashAuditList">
+      <div id="dashAuditList" class="dash-audit-list">
         <p style="font-size:12px;color:var(--text-muted)">로그 없음</p>
       </div>
     </div>
@@ -203,6 +205,7 @@
         <button class="btn btn-sm" id="filterToggleBtn" onclick="toggleFilterBar()">검색 필터</button>
         <button class="btn btn-sm" id="refreshButton" title="새로고침">🔄</button>
         <button class="btn btn-sm" id="excelImportButton" onclick="openExcelImportModal()" title="엑셀로 테스트케이스 가져오기">📥 Excel</button>
+        <button class="btn btn-sm" id="excelExportButton" onclick="openExportModal()" title="엑셀로 내보내기">📤 내보내기</button>
         <button class="btn btn-sm btn-pri" id="newButton">＋ 새 케이스</button>
       </div>
 
@@ -780,6 +783,35 @@
         </div>
         <div id="areaTagManageList" class="area-tag-manage-list"></div>
       </div>
+      <div class="set-card">
+        <h3>데이터 백업 / 복구</h3>
+        <p>전체 데이터(모든 프로젝트·테스트케이스·실행 결과 등)와 첨부파일을 하나의 백업 파일로 저장하고, 필요 시 그 파일로 복구합니다.</p>
+        <div class="backup-actions">
+          <button type="button" class="btn btn-sm btn-pri" id="backupExportBtn" onclick="downloadDataBackup()">⬇ 백업 다운로드</button>
+          <button type="button" class="btn btn-sm btn-danger" id="backupRestoreBtn" onclick="restoreDataBackup()">⬆ 백업으로 복구</button>
+        </div>
+        <p class="backup-warning">⚠ 복구하면 현재 데이터가 백업 시점 상태로 <strong>완전히 덮어쓰기</strong> 됩니다. 되돌릴 수 없으니 먼저 현재 상태를 백업해 두세요.</p>
+
+        <div class="backup-settings">
+          <div class="backup-set-row">
+            <span class="backup-set-label">기본 백업 폴더</span>
+            <div class="backup-folder-pick">
+              <input id="backupDirInput" class="form-input" placeholder="폴더를 지정하면 다이얼로그 없이 바로 저장됩니다" readonly>
+              <button type="button" class="btn btn-sm" id="backupChooseDirBtn" onclick="chooseBackupDir()">폴더 선택</button>
+              <button type="button" class="btn btn-sm btn-pri" id="backupNowBtn" onclick="backupNowToDir()">이 폴더에 백업</button>
+            </div>
+          </div>
+          <div class="backup-set-row">
+            <label class="backup-auto-toggle"><input type="checkbox" id="backupAutoEnabled" onchange="saveBackupSettingsFromUI()"> 자동 백업 사용</label>
+            <span class="backup-auto-opts">
+              <input type="number" id="backupIntervalDays" class="form-input backup-num" min="1" max="365" value="1" onchange="saveBackupSettingsFromUI()"> 일마다 ·
+              최근 <input type="number" id="backupKeepCount" class="form-input backup-num" min="1" max="100" value="7" onchange="saveBackupSettingsFromUI()"> 개 보관
+            </span>
+          </div>
+          <p class="backup-laststamp">마지막 백업: <span id="backupLastAt">없음</span></p>
+          <p class="backup-note">자동 백업은 앱을 켤 때 마지막 백업이 설정한 기간보다 오래되었으면 기본 폴더에 조용히 저장됩니다. (앱이 꺼져 있는 동안에는 실행되지 않습니다.)</p>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -807,14 +839,14 @@
 <!-- ══ 엑셀 임포트 모달 (#2) ══ -->
 <div id="excelImportModal" class="modal-overlay" hidden>
   <div class="modal-card" style="width:500px">
-    <div class="modal-hd"><span>📥 엑셀로 테스트케이스 가져오기</span><button class="modal-close" onclick="closeExcelImportModal()">✕</button></div>
+    <div class="modal-hd"><span>📥 엑셀/CSV로 테스트케이스 가져오기</span><button class="modal-close" onclick="closeExcelImportModal()">✕</button></div>
     <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
       <div class="excel-upload-zone" id="excelDropZone" onclick="document.getElementById('excelFileInput').click()"
            ondragover="excelDragOver(event)" ondragleave="excelDragLeave(event)" ondrop="excelDrop(event)">
-        <input type="file" id="excelFileInput" accept=".xlsx,.xls" onchange="excelFileSelected(event)">
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" onchange="excelFileSelected(event)">
         <div class="excel-upload-icon">📊</div>
         <div class="excel-upload-text">클릭하거나 파일을 드래그하여 업로드</div>
-        <div class="excel-upload-hint">.xlsx, .xls 파일 지원 · 시트 1개 = 폴더 1개</div>
+        <div class="excel-upload-hint">.xlsx, .xls, .csv 지원 · 엑셀은 시트=폴더, CSV는 '폴더' 컬럼=하위 폴더</div>
       </div>
       <div id="excelFileInfo" style="display:none;font-size:12px;color:var(--text-secondary);background:var(--bg-input);padding:8px 12px;border-radius:var(--r-md)"></div>
       <div style="font-size:11px;color:var(--text-muted)">
@@ -827,6 +859,51 @@
     <div class="modal-footer" style="justify-content:flex-end;gap:8px">
       <button class="btn btn-sm" onclick="closeExcelImportModal()">닫기</button>
       <button class="btn btn-sm btn-pri" id="excelImportBtn" onclick="doExcelImport()" disabled>가져오기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 엑셀 내보내기 모달 ══ -->
+<div id="exportModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:480px">
+    <div class="modal-hd"><span>📤 엑셀로 내보내기</span><button class="modal-close" onclick="closeExportModal()">✕</button></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+      <p style="font-size:12px;color:var(--text-muted)">내보낼 항목을 <strong>여러 개 선택</strong>할 수 있습니다. 현재 프로젝트 범위로 내보냅니다.</p>
+      <div class="export-format" id="exportFormatToggle">
+        <span class="export-format-label">형식</span>
+        <button type="button" class="export-format-btn active" data-fmt="xlsx" onclick="setExportFormat('xlsx')">Excel (.xlsx)</button>
+        <button type="button" class="export-format-btn" data-fmt="csv" onclick="setExportFormat('csv')">CSV (.csv)</button>
+      </div>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-cases" checked>
+        <span class="export-opt-ico">🧪</span>
+        <span><strong>테스트케이스 목록</strong><small>현재 프로젝트의 모든 테스트케이스</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-cases-filtered">
+        <span class="export-opt-ico">🔎</span>
+        <span><strong>필터링된 결과만</strong><small id="exportFilteredHint">현재 목록에 보이는 케이스만</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-runs">
+        <span class="export-opt-ico">📈</span>
+        <span><strong>테스트런 결과</strong><small>케이스별 실행 결과(통과/실패/사유 등)</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="defects">
+        <span class="export-opt-ico">🐞</span>
+        <span><strong>결함 목록</strong><small>등록된 결함 전체</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-plans">
+        <span class="export-opt-ico">🗂️</span>
+        <span><strong>테스트플랜 구조</strong><small>플랜 → 스위트 → 케이스 계층</small></span>
+      </label>
+      <p class="export-hint" id="exportComboHint"></p>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="closeExportModal()">닫기</button>
+      <button class="btn btn-sm btn-pri" id="exportRunBtn" onclick="runExport()">선택 항목 내보내기</button>
     </div>
   </div>
 </div>
@@ -867,6 +944,7 @@
           </div>
           <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
             <button type="button" class="btn btn-sm btn-danger" id="smDeleteBtn" onclick="deleteSuiteFromManager()" hidden>삭제</button>
+            <button type="button" class="btn btn-sm" id="smExportBtn" onclick="exportSuiteToExcel()" hidden>⬇ 엑셀 다운로드</button>
             <button type="button" class="btn btn-sm btn-pri" onclick="saveSuiteFromManager()">저장</button>
           </div>
         </div>
@@ -882,6 +960,13 @@
     <p style="font-size:12px;color:var(--text-muted)" id="failureReasonDesc">실패 이유 또는 Jira 버그 티켓 URL을 입력하세요.</p>
     <textarea id="failureReasonInput" class="form-input" rows="4" placeholder="예) https://jira.company.com/browse/BUG-123&#10;또는 실패 원인을 간략히 설명"></textarea>
     <p id="failureReasonError" class="failure-modal-error" hidden>사유를 입력해야 기록할 수 있습니다.</p>
+    <div id="failureReasonAttachSection" class="failure-modal-attach" hidden>
+      <div class="failure-modal-attach-head">
+        <span style="font-size:12px;font-weight:600">📎 첨부파일 (스크린샷·로그 등)</span>
+        <button type="button" class="btn btn-sm" id="failureReasonAttachBtn" onclick="uploadFailureReasonAttachment()">파일 첨부</button>
+      </div>
+      <div id="failureReasonAttachList" class="attach-list"></div>
+    </div>
     <div class="failure-modal-actions">
       <button class="btn btn-sm" onclick="cancelFailureReason()">취소</button>
       <button class="btn btn-sm btn-danger" id="failureReasonConfirmBtn" onclick="confirmFailureReason()">실패로 기록</button>
