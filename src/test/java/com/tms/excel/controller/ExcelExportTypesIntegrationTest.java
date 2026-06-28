@@ -100,9 +100,10 @@ class ExcelExportTypesIntegrationTest {
         assertThat(sheet.name()).isEqualTo("테스트런 결과");
         assertThat(sheet.cell(0, 0)).isEqualTo("테스트런");
         assertThat(sheet.lastRow()).isEqualTo(2); // 헤더 + 2개 아이템
+        assertThat(sheet.cell(0, 8)).isEqualTo("사유/결함"); // 실패 사유/결함 링크 열
         boolean hasFailureReason = false;
         for (int r = 1; r <= sheet.lastRow(); r++) {
-            if ("https://jira/BUG-1".equals(sheet.cell(r, 7))) hasFailureReason = true;
+            if ("https://jira/BUG-1".equals(sheet.cell(r, 8))) hasFailureReason = true;
         }
         assertThat(hasFailureReason).isTrue();
     }

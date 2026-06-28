@@ -77,6 +77,7 @@ class ProjectIsolationIntegrationTest {
                                 List.of(projectOneCase.getId(), projectTwoCase.getId()),
                                 null,
                                 1L,
+                                null,
                                 "교차 프로젝트 런",
                                 null,
                                 null))))
