@@ -72,12 +72,13 @@ class ExecutionControllerIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
-                                suiteId, null, null, null, null, null, "Sprint regression", "jun"
+                                suiteId, null, null, null, null, null, "Sprint regression", "jun", "2.21"
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-runs/\\d+")))
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.suiteName").value("Authentication"))
+                .andExpect(jsonPath("$.version").value("2.21"))
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.untested").value(2))
                 .andExpect(jsonPath("$.progressPct").value(0))
@@ -155,7 +156,7 @@ class ExecutionControllerIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
-                                suiteId, null, null, null, chromeWin.getId(), null, null, null
+                                suiteId, null, null, null, chromeWin.getId(), null, null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.testConfigurationId").value(chromeWin.getId().intValue()))
@@ -190,7 +191,7 @@ class ExecutionControllerIntegrationTest {
 
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null, null, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null, null, null, null, null, null))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다."));
     }
@@ -199,7 +200,7 @@ class ExecutionControllerIntegrationTest {
     void shouldReturnNotFoundForUnknownSuite() throws Exception {
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null, null, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null, null, null, null, null, null))))
                 .andExpect(status().isNotFound());
     }
 

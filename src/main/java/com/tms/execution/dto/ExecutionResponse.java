@@ -10,6 +10,7 @@ import java.util.List;
 public record ExecutionResponse(
         Long id,
         String name,
+        String version,
         String description,
         Long testPlanId,
         String planName,
@@ -56,6 +57,7 @@ public record ExecutionResponse(
         return new ExecutionResponse(
                 execution.getId(),
                 execution.getName(),
+                execution.getVersion(),
                 execution.getDescription(),
                 execution.getTestPlanId(),
                 execution.getPlanName(),

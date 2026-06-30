@@ -29,6 +29,10 @@ public class Execution {
     @Column(nullable = false, length = 200)
     private String name;
 
+    // 제품/릴리스 버전 라벨 (예: 2.21, 2.22) — 같은 케이스를 버전별로 생성·수행·종료해 사이클을 구분한다.
+    @Column(length = 50)
+    private String version;
+
     @Lob
     private String description;
 
@@ -79,7 +83,7 @@ public class Execution {
     protected Execution() {
     }
 
-    public Execution(String name, String description, Long projectId, Long testPlanId, String planName, Long testSuiteId, String suiteName, String assignee) {
+    public Execution(String name, String description, Long projectId, Long testPlanId, String planName, Long testSuiteId, String suiteName, String assignee, String version) {
         this.name = name;
         this.description = description;
         this.projectId = projectId;
@@ -88,6 +92,7 @@ public class Execution {
         this.testSuiteId = testSuiteId;
         this.suiteName = suiteName;
         this.assignee = assignee;
+        this.version = version;
         this.status = ExecutionStatus.IN_PROGRESS;
     }
 
@@ -128,6 +133,7 @@ public class Execution {
 
     public Long getId() { return id; }
     public String getName() { return name; }
+    public String getVersion() { return version; }
     public String getDescription() { return description; }
     public Long getProjectId() { return projectId; }
     public Long getTestPlanId() { return testPlanId; }

@@ -3143,7 +3143,7 @@ function buildRunCycleItem(exec) {
   if (planColor) item.style.setProperty("--plan-color", planColor);
   const done = exec.total - exec.untested;
   item.innerHTML =
-    `<div class="run-cycle-name">${escapeHtml(exec.name)}</div>` +
+    `<div class="run-cycle-name">${exec.version ? `<span class="badge b-ver">v${escapeHtml(exec.version)}</span> ` : ""}${escapeHtml(exec.name)}</div>` +
     `<div class="run-cycle-meta">` +
       `<span class="badge ${exec.status === "COMPLETED" ? "b-pass" : "b-tag"}">${EXEC_STATUS_LABEL[exec.status] || exec.status}</span>` +
       `<span>${done}/${exec.total} (${exec.progressPct}%)</span>` +
@@ -3438,7 +3438,7 @@ function runDetailMetaText(exec) {
   const created = exec.createdAt ? formatDateTime(exec.createdAt) : "";
   const isCompleted = exec.status === "COMPLETED";
   const completedAt = exec.completedAt ? formatDateTime(exec.completedAt) : "";
-  return `${exec.suiteName || "테스트케이스 직접 선택"} · 생성 ${created}${exec.assignee ? " · " + exec.assignee : ""}`
+  return `${exec.version ? "버전 " + exec.version + " · " : ""}${exec.suiteName || "테스트케이스 직접 선택"} · 생성 ${created}${exec.assignee ? " · " + exec.assignee : ""}`
     + (exec.configurationName ? ` · 🖥 ${exec.configurationName}` : "")
     + (isCompleted && completedAt ? ` · 완료 ${completedAt}` : "");
 }
@@ -3892,6 +3892,7 @@ async function openNewRunModal() {
   envSel.innerHTML = '<option value="">-- 환경 없음 --</option>' +
     configs.map(c => `<option value="${c.id}" title="${escapeHtml(configEnvDetail(c))}">${escapeHtml(c.name)}</option>`).join("");
   document.getElementById("runNameInput").value = "";
+  document.getElementById("runVersionInput").value = "";
   document.getElementById("runAssigneeInput").value = "";
   _runTcPickerAllTcs = [];
   _runTcPickerSelectedIds = new Set();
@@ -3928,6 +3929,7 @@ async function createExecution() {
   const planId = document.getElementById("runPlanSelect").value ? Number(document.getElementById("runPlanSelect").value) : null;
   const envVal = document.getElementById("runEnvSelect").value;
   const testConfigurationId = envVal ? Number(envVal) : null;
+  const version = document.getElementById("runVersionInput").value.trim() || null;
   let payload;
   if (state.runSourceMode === "cases") {
     if (_runTcPickerSelectedIds.size === 0) { _toast("테스트케이스를 1개 이상 선택하세요.", true); return; }
@@ -3937,7 +3939,8 @@ async function createExecution() {
       projectId: state.currentProjectId || null,
       testConfigurationId,
       name: document.getElementById("runNameInput").value.trim() || null,
-      assignee: document.getElementById("runAssigneeInput").value.trim() || null
+      assignee: document.getElementById("runAssigneeInput").value.trim() || null,
+      version
     };
   } else {
     const suiteId = Number(document.getElementById("runSuiteSelect").value);
@@ -3946,7 +3949,8 @@ async function createExecution() {
       suiteId,
       testConfigurationId,
       name: document.getElementById("runNameInput").value.trim() || null,
-      assignee: document.getElementById("runAssigneeInput").value.trim() || null
+      assignee: document.getElementById("runAssigneeInput").value.trim() || null,
+      version
     };
   }
   try {

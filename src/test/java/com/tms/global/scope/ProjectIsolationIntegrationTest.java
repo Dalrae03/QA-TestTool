@@ -80,6 +80,7 @@ class ProjectIsolationIntegrationTest {
                                 null,
                                 "교차 프로젝트 런",
                                 null,
+                                null,
                                 null))))
                 .andExpect(status().isBadRequest());
     }

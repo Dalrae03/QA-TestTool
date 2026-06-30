@@ -212,6 +212,7 @@ function normalizeExecution(exec, includeItems) {
   return {
     id: exec.id,
     name: exec.name,
+    version: exec.version ?? null,
     description: exec.description ?? null,
     testPlanId: exec.testPlanId ?? null,
     testSuiteId: exec.testSuiteId ?? null,
@@ -943,6 +944,7 @@ const server = http.createServer(async (req, res) => {
       const exec = {
         id: nextExecutionId++,
         name: body.name && body.name.trim() ? body.name.trim() : `${suite.name} — ${now.slice(0, 10)}`,
+        version: body.version && body.version.trim() ? body.version.trim() : null,
         description: body.description ?? null,
         testPlanId: suite.testPlanId,
         testSuiteId: suite.id,

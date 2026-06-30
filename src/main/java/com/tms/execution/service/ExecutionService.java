@@ -150,7 +150,8 @@ public class ExecutionService {
                 planName,
                 suite.getId(),
                 suite.getName(),
-                normalizeOptional(request.assignee())
+                normalizeOptional(request.assignee()),
+                normalizeOptional(request.version())
         );
         applyConfiguration(execution, request.testConfigurationId());
         suite.getTestCases().forEach(testCase -> addItemWithCurrentVersion(execution, testCase));
@@ -199,7 +200,8 @@ public class ExecutionService {
                 planName,
                 null,
                 null,
-                normalizeOptional(request.assignee())
+                normalizeOptional(request.assignee()),
+                normalizeOptional(request.version())
         );
         applyConfiguration(execution, request.testConfigurationId());
         uniqueIds.forEach(id -> addItemWithCurrentVersion(execution, casesById.get(id)));
@@ -251,7 +253,8 @@ public class ExecutionService {
                 source.getPlanName(),
                 source.getTestSuiteId(),
                 source.getSuiteName(),
-                source.getAssignee()
+                source.getAssignee(),
+                source.getVersion()
         );
         clone.updateEnvironment(source.getTestConfigurationId(), source.getConfigurationName(), source.getEnvironmentDetail());
         // 원본 런의 케이스를 현재 최신 버전으로 재스냅샷 — 그 사이 삭제된 케이스는 건너뛴다.

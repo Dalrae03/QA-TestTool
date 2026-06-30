@@ -87,7 +87,7 @@ class ExcelExportTypesIntegrationTest {
 
     @Test
     void exportsTestRunResults() throws Exception {
-        Execution exec = new Execution("스프린트1 회귀", null, 7L, null, "플랜A", null, "스위트A", "tester");
+        Execution exec = new Execution("스프린트1 회귀", null, 7L, null, "플랜A", null, "스위트A", "tester", "2.21");
         exec.addItem(100L, "로그인 성공");
         exec.addItem(101L, "로그인 실패");
         exec = executionRepository.save(exec);
