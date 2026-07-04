@@ -8,8 +8,10 @@ public record CreateExecutionRequest(
         List<Long> testCaseIds,
         Long testPlanId,
         Long projectId,
+        Long testConfigurationId,
         @Size(max = 200) String name,
         String description,
-        @Size(max = 100) String assignee
+        @Size(max = 100) String assignee,
+        @Size(max = 50) String version
 ) {
 }

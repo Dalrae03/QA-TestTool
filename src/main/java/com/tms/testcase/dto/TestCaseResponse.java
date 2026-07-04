@@ -34,6 +34,7 @@ public record TestCaseResponse(
         TestConfigurationResponse testConfiguration,
         List<AreaTagResponse> areaTags,
         List<DefectResponse> defects,
+        List<String> jiraRequirementKeys,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
@@ -59,6 +60,7 @@ public record TestCaseResponse(
                 testCase.getTestConfiguration() == null ? null : TestConfigurationResponse.from(testCase.getTestConfiguration()),
                 testCase.getAreaTags().stream().map(AreaTagResponse::from).toList(),
                 testCase.getDefects().stream().map(DefectResponse::from).toList(),
+                List.copyOf(testCase.getJiraRequirementKeys()),
                 testCase.getCreatedAt(),
                 testCase.getUpdatedAt()
         );

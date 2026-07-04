@@ -109,6 +109,8 @@ public class AuditLogService {
             case MOVED -> "폴더가 변경되었습니다.";
             case DEFECT_LINKED -> "결함이 연결되었습니다.";
             case DEFECT_UNLINKED -> "결함 연결이 해제되었습니다.";
+            case REQUIREMENT_LINKED -> "Jira 요구사항이 연결되었습니다.";
+            case REQUIREMENT_UNLINKED -> "Jira 요구사항 연결이 해제되었습니다.";
             case VERSION_CREATED -> label + " 버전이 생성되었습니다.";
             case VERSION_RESTORED -> label + " 버전이 복원되었습니다.";
             case DELETED -> label + "이(가) 삭제되었습니다.";

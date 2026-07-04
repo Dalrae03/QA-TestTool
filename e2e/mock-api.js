@@ -10,6 +10,7 @@ let nextDefectId = 1;
 let nextFolderId = 1;
 let nextExecutionId = 1;
 let nextExecutionItemId = 1;
+let nextHistoryId = 1;
 let nextUserId = 1;
 let nextAuditLogId = 1;
 let nextTestCaseVersionId = 1;
@@ -177,6 +178,21 @@ function normalizePlan(plan) {
   };
 }
 
+// 컨피그의 서버환경·OS·브라우저·기기·Java·DB 버전을 한 줄 요약으로 — 백엔드 buildEnvironmentDetail()과 같은 규칙.
+function configDetailString(config) {
+  if (!config) return null;
+  const env = config.serverEnvironmentId ? serverEnvironments.find((e) => e.id === config.serverEnvironmentId) : null;
+  const parts = [
+    env ? env.name : null,
+    config.os ? `${config.os}${config.osVersion ? " " + config.osVersion : ""}` : null,
+    config.browser ? `${config.browser}${config.browserVersion ? " " + config.browserVersion : ""}` : null,
+    config.device || null,
+    config.runtimeVersion || null,
+    config.dbVersion || null
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 function normalizeConfiguration(configuration) {
   if (!configuration) return null;
   return {
@@ -196,10 +212,14 @@ function normalizeExecution(exec, includeItems) {
   return {
     id: exec.id,
     name: exec.name,
+    version: exec.version ?? null,
     description: exec.description ?? null,
     testPlanId: exec.testPlanId ?? null,
     testSuiteId: exec.testSuiteId ?? null,
     suiteName: exec.suiteName ?? null,
+    testConfigurationId: exec.testConfigurationId ?? null,
+    configurationName: exec.configurationName ?? null,
+    environmentDetail: exec.environmentDetail ?? null,
     status: exec.status,
     assignee: exec.assignee ?? null,
     total,
@@ -209,11 +229,26 @@ function normalizeExecution(exec, includeItems) {
     blocked: countBy("BLOCKED"),
     retest: countBy("RETEST"),
     progressPct: total === 0 ? 0 : Math.round((executed * 100) / total),
-    items: includeItems ? items.map((it) => ({ ...it })) : null,
+    items: includeItems ? items.map((it) => ({ ...it, history: it.history || [] })) : null,
     createdAt: exec.createdAt,
     updatedAt: exec.updatedAt,
     completedAt: exec.completedAt ?? null
   };
+}
+
+// 결과 기록 — 재시도 이력을 함께 누적한다. 백엔드 ExecutionItem.record()와 같은 규칙.
+function recordItemResult(item, status, comment, failureReason, now) {
+  item.history = item.history || [];
+  item.status = status;
+  item.comment = comment ?? null;
+  item.failureReason = failureReason ?? null;
+  if (status === "UNTESTED") {
+    item.executedAt = null;
+    item.history.pop(); // 오클릭 복구 — 직전 시도 되돌림
+  } else {
+    item.executedAt = now;
+    item.history.push({ id: nextHistoryId++, status, comment: comment ?? null, failureReason: failureReason ?? null, recordedAt: now });
+  }
 }
 
 function normalizeFolder(folder) {
@@ -891,7 +926,9 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === "/api/test-runs") {
     if (req.method === "GET") {
-      json(res, 200, [...executions].sort((a, b) => b.id - a.id).map((exec) => normalizeExecution(exec, false)));
+      const assignee = url.searchParams.get("assignee");
+      const filtered = assignee ? executions.filter((e) => e.assignee === assignee) : executions;
+      json(res, 200, [...filtered].sort((a, b) => b.id - a.id).map((exec) => normalizeExecution(exec, false)));
       return;
     }
     if (req.method === "POST") {
@@ -903,13 +940,18 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const now = new Date().toISOString();
+      const config = body.testConfigurationId ? testConfigurations.find((c) => c.id === Number(body.testConfigurationId)) : null;
       const exec = {
         id: nextExecutionId++,
         name: body.name && body.name.trim() ? body.name.trim() : `${suite.name} — ${now.slice(0, 10)}`,
+        version: body.version && body.version.trim() ? body.version.trim() : null,
         description: body.description ?? null,
         testPlanId: suite.testPlanId,
         testSuiteId: suite.id,
         suiteName: suite.name,
+        testConfigurationId: config ? config.id : null,
+        configurationName: config ? config.name : null,
+        environmentDetail: config ? configDetailString(config) : null,
         status: "IN_PROGRESS",
         assignee: body.assignee ?? null,
         items: suite.testCaseIds.map((tcId) => {
@@ -937,11 +979,93 @@ const server = http.createServer(async (req, res) => {
     const item = exec.items.find((it) => it.id === Number(execItemMatch[2]));
     if (!item) { json(res, 404, { message: `ExecutionItem not found. id=${execItemMatch[2]}` }); return; }
     const body = await readBody(req);
-    item.status = body.status;
-    item.comment = body.comment ?? null;
-    item.executedAt = body.status === "UNTESTED" ? null : new Date().toISOString();
+    const now = new Date().toISOString();
+    recordItemResult(item, body.status, body.comment, body.failureReason, now);
+    exec.updatedAt = now;
+    json(res, 200, normalizeExecution(exec, true));
+    return;
+  }
+
+  const execBulkMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)\/bulk-results$/);
+  if (execBulkMatch && req.method === "PATCH") {
+    const exec = executions.find((e) => e.id === Number(execBulkMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execBulkMatch[1]}` }); return; }
+    if (exec.status === "COMPLETED") {
+      json(res, 400, { message: "완료된 테스트런은 다시 열기 전까지 수정할 수 없습니다." });
+      return;
+    }
+    const body = await readBody(req);
+    const ids = [...new Set(body.itemIds || [])];
+    const missing = ids.filter((id) => !exec.items.some((it) => it.id === id));
+    if (missing.length > 0) { json(res, 400, { message: `이 테스트런에 속하지 않은 항목이 포함되어 있습니다: ${missing}` }); return; }
+    const now = new Date().toISOString();
+    exec.items.forEach((it) => {
+      if (ids.includes(it.id)) {
+        recordItemResult(it, body.status, body.comment, body.failureReason, now);
+      }
+    });
+    exec.updatedAt = now;
+    json(res, 200, normalizeExecution(exec, true));
+    return;
+  }
+
+  const execEnvMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)\/environment$/);
+  if (execEnvMatch && req.method === "PATCH") {
+    const exec = executions.find((e) => e.id === Number(execEnvMatch[1]));
+    if (!exec) { json(res, 404, { message: `TestRun not found. id=${execEnvMatch[1]}` }); return; }
+    const body = await readBody(req);
+    if (body.testConfigurationId == null) {
+      exec.testConfigurationId = null;
+      exec.configurationName = null;
+      exec.environmentDetail = null;
+    } else {
+      const config = testConfigurations.find((c) => c.id === Number(body.testConfigurationId));
+      if (!config) { json(res, 404, { message: `TestConfiguration not found. id=${body.testConfigurationId}` }); return; }
+      exec.testConfigurationId = config.id;
+      exec.configurationName = config.name;
+      exec.environmentDetail = configDetailString(config);
+    }
     exec.updatedAt = new Date().toISOString();
     json(res, 200, normalizeExecution(exec, true));
+    return;
+  }
+
+  const execCloneMatch = url.pathname.match(/^\/api\/test-runs\/(\d+)\/clone$/);
+  if (execCloneMatch && req.method === "POST") {
+    const source = executions.find((e) => e.id === Number(execCloneMatch[1]));
+    if (!source) { json(res, 404, { message: `TestRun not found. id=${execCloneMatch[1]}` }); return; }
+    const now = new Date().toISOString();
+    const clone = {
+      id: nextExecutionId++,
+      name: `${source.name} (복제)`.slice(0, 200),
+      description: source.description ?? null,
+      testPlanId: source.testPlanId,
+      testSuiteId: source.testSuiteId,
+      suiteName: source.suiteName,
+      testConfigurationId: source.testConfigurationId ?? null,
+      configurationName: source.configurationName ?? null,
+      environmentDetail: source.environmentDetail ?? null,
+      status: "IN_PROGRESS",
+      assignee: source.assignee ?? null,
+      // 회귀용 — 원본 케이스를 현재 최신 버전으로 재스냅샷하고, 그 사이 삭제된 케이스는 건너뛴다.
+      items: source.items.flatMap((it) => {
+        const tc = testCases.find((c) => c.id === it.testCaseId);
+        if (!tc) return [];
+        const latest = testCaseVersions
+          .filter((v) => v.testCaseId === tc.id)
+          .sort((a, b) => b.versionNumber - a.versionNumber)[0] ?? null;
+        return [{
+          id: nextExecutionItemId++, testCaseId: tc.id, caseTitle: tc.title,
+          versionNumber: latest ? latest.versionNumber : null, versionLabel: latest ? latest.label : null,
+          status: "UNTESTED", comment: null, executedAt: null
+        }];
+      }),
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null
+    };
+    executions.push(clone);
+    json(res, 201, normalizeExecution(clone, true));
     return;
   }
 

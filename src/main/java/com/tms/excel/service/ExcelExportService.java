@@ -167,7 +167,7 @@ public class ExcelExportService {
                 ? executionRepository.findAllByProjectIdOrderByCreatedAtDesc(projectId)
                 : executionRepository.findAllByOrderByCreatedAtDesc();
 
-        String[] headers = {"테스트런", "런 상태", "플랜", "스위트", "담당자",
+        String[] headers = {"테스트런", "런 상태", "플랜", "스위트", "실행환경", "담당자",
                 "테스트케이스", "결과", "사유/결함", "비고", "버전", "실행일시"};
         List<List<String>> rows = new ArrayList<>();
         for (Execution exec : executions) {
@@ -180,6 +180,7 @@ public class ExcelExportService {
                         enumName(exec.getStatus()),
                         nz(exec.getPlanName()),
                         nz(exec.getSuiteName()),
+                        nz(exec.getConfigurationName()),
                         nz(exec.getAssignee()),
                         nz(item.getCaseTitle()),
                         enumName(item.getStatus()),
@@ -191,6 +192,129 @@ public class ExcelExportService {
             }
         }
         return new Tabular("테스트런 결과", "test-run-results", headers, rows);
+    }
+
+    // ── 단일 런 결과 리포트 ──────────────────────────────────────────
+
+    /**
+     * 하나의 테스트런을 "리포트"로 내보낸다.
+     * xlsx → 요약 시트(런 메타·집계·통과율) + 케이스별 결과 시트.
+     * csv  → 케이스별 결과 표만(요약은 시트가 1개뿐이라 생략).
+     */
+    public ExcelFile exportRunReport(Long executionId, String format) {
+        Execution exec = executionRepository.findById(executionId)
+                .orElseThrow(() -> new EntityNotFoundException("TestRun not found. id=" + executionId));
+        Tabular detail = tabularRunItems(exec);
+        String fileBase = safeFilename(exec.getName()) + "-리포트";
+        if ("csv".equalsIgnoreCase(format)) {
+            return new ExcelFile(fileBase + ".csv", toCsv(detail.headers(), detail.rows()));
+        }
+        return runReportWorkbook(exec, detail, fileBase);
+    }
+
+    /** 한 런의 케이스별 실행 결과 표(런 메타 컬럼 없이 케이스 단위). */
+    private Tabular tabularRunItems(Execution exec) {
+        String[] headers = {"테스트케이스", "결과", "사유/결함", "비고", "버전", "실행일시"};
+        List<List<String>> rows = new ArrayList<>();
+        for (ExecutionItem item : exec.getItems()) {
+            String version = item.getVersionNumber() != null
+                    ? "v" + item.getVersionNumber() + (item.getVersionLabel() != null ? " " + item.getVersionLabel() : "")
+                    : "";
+            rows.add(List.of(
+                    nz(item.getCaseTitle()),
+                    enumName(item.getStatus()),
+                    nz(item.getFailureReason()),
+                    nz(item.getComment()),
+                    version,
+                    dt(item.getExecutedAt())
+            ));
+        }
+        return new Tabular("케이스별 결과", "run-result-items", headers, rows);
+    }
+
+    /** 요약 시트 + 케이스별 결과 시트로 된 런 리포트 워크북. */
+    private ExcelFile runReportWorkbook(Execution exec, Tabular detail, String fileBase) {
+        List<ExecutionItem> items = exec.getItems();
+        int total = items.size();
+        long passed = countStatus(items, "PASSED");
+        long failed = countStatus(items, "FAILED");
+        long blocked = countStatus(items, "BLOCKED");
+        long retest = countStatus(items, "RETEST");
+        long untested = countStatus(items, "UNTESTED");
+        long executed = total - untested;
+        int progressPct = total == 0 ? 0 : Math.round((executed * 100f) / total);
+        int passRate = executed == 0 ? 0 : Math.round((passed * 100f) / executed);
+
+        try (Workbook workbook = new XSSFWorkbook()) {
+            CellStyle headerStyle = headerStyle(workbook);
+
+            Sheet summary = workbook.createSheet("리포트 요약");
+            List<String[]> meta = new ArrayList<>();
+            meta.add(new String[]{"테스트런", nz(exec.getName())});
+            meta.add(new String[]{"상태", enumName(exec.getStatus())});
+            meta.add(new String[]{"플랜", nz(exec.getPlanName())});
+            meta.add(new String[]{"스위트", nz(exec.getSuiteName())});
+            meta.add(new String[]{"실행환경", nz(exec.getConfigurationName())});
+            meta.add(new String[]{"환경 상세", nz(exec.getEnvironmentDetail())});
+            meta.add(new String[]{"담당자", nz(exec.getAssignee())});
+            meta.add(new String[]{"생성일", dt(exec.getCreatedAt())});
+            meta.add(new String[]{"완료일", dt(exec.getCompletedAt())});
+            meta.add(new String[]{"", ""});
+            meta.add(new String[]{"총 건수", str(total)});
+            meta.add(new String[]{"통과", str(passed)});
+            meta.add(new String[]{"실패", str(failed)});
+            meta.add(new String[]{"차단", str(blocked)});
+            meta.add(new String[]{"재테스트", str(retest)});
+            meta.add(new String[]{"미실행", str(untested)});
+            meta.add(new String[]{"진행률", progressPct + "%"});
+            meta.add(new String[]{"통과율", passRate + "%"});
+
+            Row titleRow = summary.createRow(0);
+            Cell titleCell = titleRow.createCell(0);
+            titleCell.setCellValue("테스트런 결과 리포트");
+            titleCell.setCellStyle(headerStyle);
+            int r = 2;
+            for (String[] kv : meta) {
+                Row row = summary.createRow(r++);
+                Cell label = row.createCell(0);
+                label.setCellValue(kv[0]);
+                label.setCellStyle(headerStyle);
+                row.createCell(1).setCellValue(kv[1]);
+            }
+            summary.autoSizeColumn(0);
+            summary.autoSizeColumn(1);
+
+            writeTabularSheet(workbook, headerStyle, detail);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return new ExcelFile(fileBase + ".xlsx", out.toByteArray());
+        } catch (IOException e) {
+            throw new IllegalStateException("엑셀 생성에 실패했습니다: " + e.getMessage(), e);
+        }
+    }
+
+    private long countStatus(List<ExecutionItem> items, String statusName) {
+        return items.stream().filter(it -> it.getStatus() != null && it.getStatus().name().equals(statusName)).count();
+    }
+
+    /** Tabular 1개를 기존 워크북에 시트로 추가한다. */
+    private void writeTabularSheet(Workbook workbook, CellStyle headerStyle, Tabular t) {
+        Sheet sheet = workbook.createSheet(WorkbookUtil.createSafeSheetName(t.sheetName()));
+        Row header = sheet.createRow(0);
+        for (int c = 0; c < t.headers().length; c++) {
+            Cell cell = header.createCell(c);
+            cell.setCellValue(t.headers()[c]);
+            cell.setCellStyle(headerStyle);
+        }
+        int r = 1;
+        for (List<String> row : t.rows()) {
+            Row excelRow = sheet.createRow(r++);
+            for (int c = 0; c < row.size(); c++) {
+                excelRow.createCell(c).setCellValue(row.get(c));
+            }
+        }
+        for (int c = 0; c < t.headers().length; c++) sheet.autoSizeColumn(c);
     }
 
     // ── 결함 목록 ────────────────────────────────────────────────────

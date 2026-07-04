@@ -15,8 +15,10 @@ import com.tms.defect.entity.DefectStatus;
 import com.tms.defect.repository.DefectRepository;
 import com.tms.global.exception.InvalidRequestException;
 import com.tms.jira.client.JiraClient;
+import com.tms.jira.config.JiraProperties;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.JiraSyncResult;
+import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,7 @@ class JiraServiceTest {
 
     @Mock DefectRepository defectRepository;
     @Mock JiraClient jiraClient;
+    @Mock JiraProperties jiraProperties;
     @InjectMocks JiraService jiraService;
 
     @Test
@@ -88,6 +91,26 @@ class JiraServiceTest {
 
         assertThat(response.jiraKey()).isEqualTo("PROJ-99");
         then(jiraClient).shouldHaveNoInteractions();
+    }
+
+    @Test
+    void findByJiraKey_연결된결함을_역방향으로_조회한다() {
+        Defect defect = new Defect("버그", null, DefectSeverity.MINOR, DefectStatus.OPEN, null);
+        defect.linkJira("TMS-7");
+        given(defectRepository.findByJiraKey("TMS-7")).willReturn(Optional.of(defect));
+
+        DefectResponse response = jiraService.findByJiraKey("TMS-7");
+
+        assertThat(response.jiraKey()).isEqualTo("TMS-7");
+    }
+
+    @Test
+    void findByJiraKey_연결된결함이없으면_예외를_던진다() {
+        given(defectRepository.findByJiraKey("TMS-404")).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> jiraService.findByJiraKey("TMS-404"))
+                .isInstanceOf(EntityNotFoundException.class)
+                .hasMessageContaining("연결된 결함이 없습니다");
     }
 
     @Test

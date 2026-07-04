@@ -9,9 +9,12 @@ import com.tms.testrun.dto.CreateTestRunRequest;
 import com.tms.testrun.dto.TestRunResponse;
 import com.tms.testrun.entity.TestRun;
 import com.tms.testrun.repository.TestRunRepository;
+import com.tms.testrun.repository.TestRunSpecification;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,8 +34,27 @@ public class TestRunService {
     }
 
     public List<TestRunResponse> getTestRuns(Long testCaseId) {
+        return getTestRuns(testCaseId, null, null, null, null, null);
+    }
+
+    public List<TestRunResponse> getTestRuns(
+            Long testCaseId,
+            ResultStatus status,
+            String assignee,
+            String keyword,
+            LocalDateTime executedFrom,
+            LocalDateTime executedTo
+    ) {
         ensureTestCaseExists(testCaseId);
-        return testRunRepository.findByTestCaseIdOrderByExecutedAtDesc(testCaseId)
+
+        Specification<TestRun> spec = TestRunSpecification.hasTestCaseId(testCaseId);
+        if (status != null) spec = spec.and(TestRunSpecification.hasStatus(status));
+        if (assignee != null && !assignee.isBlank()) spec = spec.and(TestRunSpecification.hasAssignee(assignee));
+        if (keyword != null && !keyword.isBlank()) spec = spec.and(TestRunSpecification.containsKeyword(keyword));
+        if (executedFrom != null) spec = spec.and(TestRunSpecification.executedFrom(executedFrom));
+        if (executedTo != null) spec = spec.and(TestRunSpecification.executedTo(executedTo));
+
+        return testRunRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "executedAt"))
                 .stream()
                 .map(TestRunResponse::from)
                 .toList();

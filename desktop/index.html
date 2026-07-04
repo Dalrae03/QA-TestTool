@@ -652,6 +652,12 @@
   <div class="run-workspace">
     <section class="run-list-column">
       <div class="plan-column-title"><span>테스트런</span><span id="runCount" class="badge b-tag">0</span></div>
+      <div class="run-filter-bar">
+        <label class="run-filter-label" for="runAssigneeFilter">담당자</label>
+        <select id="runAssigneeFilter" class="form-input run-filter-select">
+          <option value="">전체</option>
+        </select>
+      </div>
       <div id="runEmpty" class="plan-empty">아직 테스트런이 없습니다. ‘새 테스트런’으로 시작하세요.</div>
       <div id="runList" class="run-cycle-list"></div>
     </section>
@@ -664,15 +670,34 @@
             <div class="run-detail-meta" id="runDetailMeta"></div>
           </div>
           <div class="run-detail-actions">
+            <span id="runAssigneeBadgeWrap"></span>
             <span id="runPlanBadgeWrap"></span>
+            <span id="runEnvBadgeWrap"></span>
             <span class="badge" id="runDetailStatus"></span>
+            <button type="button" class="btn btn-sm" id="runStatsButton" aria-pressed="false">📈 진척도·통계</button>
             <button type="button" class="btn btn-sm" id="runCompleteButton">완료 처리</button>
+            <button type="button" class="btn btn-sm" id="runReportButton">📊 엑셀 리포트</button>
+            <button type="button" class="btn btn-sm" id="runCloneButton">복제</button>
             <button type="button" class="btn btn-sm btn-danger" id="runDeleteButton">삭제</button>
           </div>
         </div>
         <!-- 플랜 요약 (#10) -->
         <div id="runPlanSummary" class="run-plan-summary" hidden></div>
         <div id="runDetailReport" class="run-report" hidden></div>
+        <!-- 결과 일괄 처리 바 — 항목을 선택하면 나타난다 -->
+        <div id="runBulkBar" class="run-bulk-bar" hidden>
+          <label class="run-bulk-selectall"><input type="checkbox" id="runBulkSelectAll"> 전체 선택</label>
+          <span id="runBulkCount" class="run-bulk-count">0개 선택</span>
+          <input class="form-input run-bulk-note" id="runBulkNote" placeholder="비고 (선택, 모든 선택 항목에 적용)">
+          <div class="run-bulk-actions">
+            <button type="button" class="btn btn-sm suite-run-btn pass" data-s="PASSED">통과</button>
+            <button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>
+            <button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>
+            <button type="button" class="btn btn-sm suite-run-btn retest" data-s="RETEST">재테스트</button>
+            <button type="button" class="btn btn-sm" data-s="UNTESTED">미실행</button>
+            <button type="button" class="btn btn-sm" id="runBulkClear">선택 해제</button>
+          </div>
+        </div>
         <div id="runDetailItems" class="run-detail-items"></div>
       </div>
     </section>
@@ -699,7 +724,9 @@
       <div id="runTcPickerTree" class="tc-picker-tree"></div>
       <div id="runTcPickerSelected" class="tc-picker-selected-bar">선택된 TC: <strong id="runTcPickerCount">0</strong>건</div>
     </div>
+    <label class="form-field"><span>실행환경 (선택)</span><select id="runEnvSelect" class="form-input"><option value="">-- 환경 없음 --</option></select></label>
     <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 자동으로 생성"></label>
+    <label class="form-field"><span>버전 (선택)</span><input id="runVersionInput" class="form-input" maxlength="50" placeholder="예: 2.21"></label>
     <label class="form-field"><span>담당자</span><select id="runAssigneeInput" class="form-input"><option value="">담당자 없음</option></select></label>
     <div class="plan-form-actions">
       <button type="button" class="btn btn-sm" id="newRunCancelButton">취소</button>

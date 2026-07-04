@@ -17,7 +17,12 @@ import com.tms.execution.dto.UpdateExecutionRequest;
 import com.tms.execution.entity.ExecutionStatus;
 import com.tms.execution.entity.ResultStatus;
 import com.tms.execution.repository.ExecutionRepository;
+import com.tms.configuration.entity.TestConfiguration;
+import com.tms.configuration.repository.TestConfigurationRepository;
 import com.tms.testcase.entity.TestCase;
+import com.tms.testcase.entity.TestCaseBrowser;
+import com.tms.testcase.entity.TestCaseDevice;
+import com.tms.testcase.entity.TestCaseOs;
 import com.tms.testcase.entity.TestCasePriority;
 import com.tms.testcase.entity.TestCaseStatus;
 import com.tms.testcase.entity.TestCaseType;
@@ -47,6 +52,7 @@ class ExecutionControllerIntegrationTest {
     @Autowired TestPlanRepository testPlanRepository;
     @Autowired TestSuiteRepository testSuiteRepository;
     @Autowired TestCaseRepository testCaseRepository;
+    @Autowired TestConfigurationRepository testConfigurationRepository;
 
     @AfterEach
     void tearDown() {
@@ -54,6 +60,7 @@ class ExecutionControllerIntegrationTest {
         testSuiteRepository.deleteAll();
         testPlanRepository.deleteAll();
         testCaseRepository.deleteAll();
+        testConfigurationRepository.deleteAll();
     }
 
     @Test
@@ -65,12 +72,13 @@ class ExecutionControllerIntegrationTest {
         MvcResult created = mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
-                                suiteId, null, null, null, null, "Sprint regression", "jun"
+                                suiteId, null, null, null, null, null, "Sprint regression", "jun", "2.21"
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-runs/\\d+")))
                 .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.suiteName").value("Authentication"))
+                .andExpect(jsonPath("$.version").value("2.21"))
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.untested").value(2))
                 .andExpect(jsonPath("$.progressPct").value(0))
@@ -117,7 +125,12 @@ class ExecutionControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(new RecordResultRequest(ResultStatus.FAILED, " 재확인 필요 ", null))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.failed").value(1))
-                .andExpect(jsonPath("$.items[0].comment").value("재확인 필요"));
+                .andExpect(jsonPath("$.items[0].comment").value("재확인 필요"))
+                // 재시도 이력: 처음 PASSED(완료 전), 재오픈 후 FAILED → 시간 순 2건이 쌓여야 한다.
+                .andExpect(jsonPath("$.items[0].history", hasSize(2)))
+                .andExpect(jsonPath("$.items[0].history[0].status").value("PASSED"))
+                .andExpect(jsonPath("$.items[0].history[1].status").value("FAILED"))
+                .andExpect(jsonPath("$.items[0].history[1].comment").value("재확인 필요"));
 
         mockMvc.perform(get("/api/test-runs"))
                 .andExpect(status().isOk())
@@ -130,12 +143,55 @@ class ExecutionControllerIntegrationTest {
     }
 
     @Test
+    void shouldSaveAndUpdateExecutionEnvironment() throws Exception {
+        TestCase only = saveCase("Smoke");
+        long suiteId = createSuite("Smoke suite", List.of(only.getId()));
+        TestConfiguration chromeWin = testConfigurationRepository.save(new TestConfiguration(
+                "Chrome / Windows / DEV", null, TestCaseOs.WINDOWS, "11", TestCaseBrowser.CHROME, "123.0",
+                TestCaseDevice.DESKTOP, "Java 21", "MySQL 8.0", true));
+        TestConfiguration safariMac = testConfigurationRepository.save(new TestConfiguration(
+                "Safari / macOS / LOCAL", null, TestCaseOs.MAC, "14", TestCaseBrowser.SAFARI, "17.0",
+                TestCaseDevice.DESKTOP, "Java 21", "MySQL 8.0", true));
+
+        MvcResult created = mockMvc.perform(post("/api/test-runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
+                                suiteId, null, null, null, chromeWin.getId(), null, null, null, null
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.testConfigurationId").value(chromeWin.getId().intValue()))
+                .andExpect(jsonPath("$.configurationName").value("Chrome / Windows / DEV"))
+                // OS/브라우저/Java/DB 버전이 한 줄 스냅샷으로 굳혀졌는지
+                .andExpect(jsonPath("$.environmentDetail").value(org.hamcrest.Matchers.containsString("Java 21")))
+                .andExpect(jsonPath("$.environmentDetail").value(org.hamcrest.Matchers.containsString("MySQL 8.0")))
+                .andReturn();
+        long runId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asLong();
+
+        // 환경 재배정
+        mockMvc.perform(patch("/api/test-runs/{id}/environment", runId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"testConfigurationId\":" + safariMac.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.testConfigurationId").value(safariMac.getId().intValue()))
+                .andExpect(jsonPath("$.configurationName").value("Safari / macOS / LOCAL"));
+
+        // 환경 비우기
+        mockMvc.perform(patch("/api/test-runs/{id}/environment", runId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"testConfigurationId\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.testConfigurationId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.configurationName").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.environmentDetail").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
     void shouldRejectRunFromEmptySuite() throws Exception {
         long suiteId = createSuite("Empty suite", List.of());
 
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(suiteId, null, null, null, null, null, null, null, null))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다."));
     }
@@ -144,7 +200,7 @@ class ExecutionControllerIntegrationTest {
     void shouldReturnNotFoundForUnknownSuite() throws Exception {
         mockMvc.perform(post("/api/test-runs")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null, null, null, null))))
+                        .content(objectMapper.writeValueAsString(new CreateExecutionRequest(9999L, null, null, null, null, null, null, null, null))))
                 .andExpect(status().isNotFound());
     }
 

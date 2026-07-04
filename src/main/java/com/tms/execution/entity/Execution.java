@@ -29,6 +29,10 @@ public class Execution {
     @Column(nullable = false, length = 200)
     private String name;
 
+    // 제품/릴리스 버전 라벨 (예: 2.21, 2.22) — 같은 케이스를 버전별로 생성·수행·종료해 사이클을 구분한다.
+    @Column(length = 50)
+    private String version;
+
     @Lob
     private String description;
 
@@ -45,6 +49,16 @@ public class Execution {
 
     @Column(length = 200)
     private String suiteName;
+
+    // 실행환경(테스트 컨피그) 스냅샷 — 컨피그가 삭제·수정돼도 런이 "어떤 환경/버전에서 실행됐는지"는 그대로 보존된다 (FK 미사용).
+    private Long testConfigurationId;
+
+    @Column(length = 100)
+    private String configurationName;
+
+    // OS/브라우저/기기/Java·DB 버전까지 한 줄로 굳혀둔 스냅샷 — 컨피그가 나중에 바뀌어도 당시 환경이 흔들리지 않게.
+    @Column(length = 500)
+    private String environmentDetail;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -69,7 +83,7 @@ public class Execution {
     protected Execution() {
     }
 
-    public Execution(String name, String description, Long projectId, Long testPlanId, String planName, Long testSuiteId, String suiteName, String assignee) {
+    public Execution(String name, String description, Long projectId, Long testPlanId, String planName, Long testSuiteId, String suiteName, String assignee, String version) {
         this.name = name;
         this.description = description;
         this.projectId = projectId;
@@ -78,6 +92,7 @@ public class Execution {
         this.testSuiteId = testSuiteId;
         this.suiteName = suiteName;
         this.assignee = assignee;
+        this.version = version;
         this.status = ExecutionStatus.IN_PROGRESS;
     }
 
@@ -92,6 +107,12 @@ public class Execution {
     public void updatePlan(Long testPlanId, String planName) {
         this.testPlanId = testPlanId;
         this.planName = planName;
+    }
+
+    public void updateEnvironment(Long testConfigurationId, String configurationName, String environmentDetail) {
+        this.testConfigurationId = testConfigurationId;
+        this.configurationName = configurationName;
+        this.environmentDetail = environmentDetail;
     }
 
     public void update(String name, String description, ExecutionStatus status, String assignee) {
@@ -112,12 +133,16 @@ public class Execution {
 
     public Long getId() { return id; }
     public String getName() { return name; }
+    public String getVersion() { return version; }
     public String getDescription() { return description; }
     public Long getProjectId() { return projectId; }
     public Long getTestPlanId() { return testPlanId; }
     public String getPlanName() { return planName; }
     public Long getTestSuiteId() { return testSuiteId; }
     public String getSuiteName() { return suiteName; }
+    public Long getTestConfigurationId() { return testConfigurationId; }
+    public String getConfigurationName() { return configurationName; }
+    public String getEnvironmentDetail() { return environmentDetail; }
     public ExecutionStatus getStatus() { return status; }
     public String getAssignee() { return assignee; }
     public List<ExecutionItem> getItems() { return items; }

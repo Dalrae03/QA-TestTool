@@ -87,7 +87,7 @@ class ExcelExportTypesIntegrationTest {
 
     @Test
     void exportsTestRunResults() throws Exception {
-        Execution exec = new Execution("스프린트1 회귀", null, 7L, null, "플랜A", null, "스위트A", "tester");
+        Execution exec = new Execution("스프린트1 회귀", null, 7L, null, "플랜A", null, "스위트A", "tester", "2.21");
         exec.addItem(100L, "로그인 성공");
         exec.addItem(101L, "로그인 실패");
         exec = executionRepository.save(exec);
@@ -100,9 +100,10 @@ class ExcelExportTypesIntegrationTest {
         assertThat(sheet.name()).isEqualTo("테스트런 결과");
         assertThat(sheet.cell(0, 0)).isEqualTo("테스트런");
         assertThat(sheet.lastRow()).isEqualTo(2); // 헤더 + 2개 아이템
+        assertThat(sheet.cell(0, 8)).isEqualTo("사유/결함"); // 실패 사유/결함 링크 열
         boolean hasFailureReason = false;
         for (int r = 1; r <= sheet.lastRow(); r++) {
-            if ("https://jira/BUG-1".equals(sheet.cell(r, 7))) hasFailureReason = true;
+            if ("https://jira/BUG-1".equals(sheet.cell(r, 8))) hasFailureReason = true;
         }
         assertThat(hasFailureReason).isTrue();
     }

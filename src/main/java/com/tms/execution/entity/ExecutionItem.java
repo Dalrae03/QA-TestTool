@@ -1,5 +1,6 @@
 package com.tms.execution.entity;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,8 +12,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "test_execution_items")
@@ -51,6 +56,11 @@ public class ExecutionItem {
 
     private LocalDateTime executedAt;
 
+    // 재시도 이력 — 결과를 기록할 때마다 한 줄씩 쌓인다(시간 순). 가장 최근 시도가 위 status 필드와 일치한다.
+    @OneToMany(mappedBy = "executionItem", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("id ASC")
+    private List<ExecutionItemHistory> history = new ArrayList<>();
+
     protected ExecutionItem() {}
 
     public ExecutionItem(Execution execution, Long testCaseId, String caseTitle) {
@@ -70,7 +80,16 @@ public class ExecutionItem {
         this.status = status;
         this.comment = comment;
         this.failureReason = failureReason;
-        this.executedAt = status == ResultStatus.UNTESTED ? null : LocalDateTime.now();
+        if (status == ResultStatus.UNTESTED) {
+            // '미실행'으로 되돌리는 것은 오클릭 복구다 — 직전 시도 기록을 이력에서 함께 되돌린다.
+            this.executedAt = null;
+            if (!history.isEmpty()) {
+                history.remove(history.size() - 1);
+            }
+        } else {
+            this.executedAt = LocalDateTime.now();
+            history.add(new ExecutionItemHistory(this, status, comment, failureReason, this.executedAt));
+        }
     }
 
     /** 하위 호환 */
@@ -88,4 +107,5 @@ public class ExecutionItem {
     public String getComment() { return comment; }
     public String getFailureReason() { return failureReason; }
     public LocalDateTime getExecutedAt() { return executedAt; }
+    public List<ExecutionItemHistory> getHistory() { return history; }
 }

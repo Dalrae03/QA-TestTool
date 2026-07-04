@@ -1,11 +1,14 @@
 package com.tms.testrun.controller;
 
+import com.tms.execution.entity.ResultStatus;
 import com.tms.testrun.dto.CreateTestRunRequest;
 import com.tms.testrun.dto.TestRunResponse;
 import com.tms.testrun.service.TestRunService;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,8 +31,17 @@ public class TestRunController {
     }
 
     @GetMapping
-    public ResponseEntity<List<TestRunResponse>> getTestRuns(@PathVariable Long testCaseId) {
-        return ResponseEntity.ok(testRunService.getTestRuns(testCaseId));
+    public ResponseEntity<List<TestRunResponse>> getTestRuns(
+            @PathVariable Long testCaseId,
+            @RequestParam(required = false) ResultStatus status,
+            @RequestParam(required = false) String assignee,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime executedFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime executedTo
+    ) {
+        return ResponseEntity.ok(
+                testRunService.getTestRuns(testCaseId, status, assignee, keyword, executedFrom, executedTo)
+        );
     }
 
     @PostMapping
