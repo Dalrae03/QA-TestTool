@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_plans")
@@ -26,6 +27,7 @@ public class TestPlan {
     private String name;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String description;
 
     @Enumerated(EnumType.STRING)
@@ -42,10 +44,12 @@ public class TestPlan {
 
     /** 위험 요소 / 리스크 목록 (줄바꿈 구분) */
     @Lob
+    @Column(length = Length.LONG32)
     private String riskItems;
 
     /** 테스트 범위 / 스코프 */
     @Lob
+    @Column(length = Length.LONG32)
     private String scope;
 
     /** 투입 인력 수 */
@@ -53,10 +57,12 @@ public class TestPlan {
 
     /** 투입 인원 목록 (줄바꿈 구분) */
     @Lob
+    @Column(length = Length.LONG32)
     private String teamMembers;
 
     /** 목표 품질 기준 */
     @Lob
+    @Column(length = Length.LONG32)
     private String qualityCriteria;
 
     /** 예산 */
@@ -65,6 +71,7 @@ public class TestPlan {
 
     /** 기타 메모 */
     @Lob
+    @Column(length = Length.LONG32)
     private String planNotes;
 
     @Column(name = "project_id")

@@ -15,6 +15,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_runs")
@@ -33,18 +34,18 @@ public class TestRun {
     private ResultStatus status;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String actualResult;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String notes;
 
     @Column(length = 100)
     private String assignee;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String failureReason;
 
     @Column(nullable = false)

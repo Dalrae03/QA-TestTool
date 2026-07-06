@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_cases")
@@ -52,23 +53,23 @@ public class TestCase {
     private String version;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String description;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String precondition;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String steps;
 
     @Lob
-    @Column(name = "expected", nullable = false)
+    @Column(name = "expected", nullable = false, length = Length.LONG32)
     private String legacyExpected;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String notes;
 
     @Enumerated(EnumType.STRING)
