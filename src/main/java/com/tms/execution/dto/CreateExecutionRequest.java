@@ -5,6 +5,7 @@ import java.util.List;
 
 public record CreateExecutionRequest(
         Long suiteId,
+        List<Long> suiteIds,
         List<Long> testCaseIds,
         Long testPlanId,
         Long projectId,

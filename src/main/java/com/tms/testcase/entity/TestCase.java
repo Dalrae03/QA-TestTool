@@ -52,23 +52,23 @@ public class TestCase {
     private String version;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = 65535, columnDefinition = "TEXT")
     private String description;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = 65535, columnDefinition = "TEXT")
     private String precondition;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = 65535, columnDefinition = "TEXT")
     private String steps;
 
     @Lob
-    @Column(name = "expected", nullable = false)
-    private String legacyExpected;
+    @Column(name = "expected", nullable = false, length = 65535, columnDefinition = "TEXT")
+    private String expectedResult;
 
     @Lob
-    @Column
+    @Column(length = 65535, columnDefinition = "TEXT")
     private String notes;
 
     @Enumerated(EnumType.STRING)
@@ -236,6 +236,29 @@ public class TestCase {
             String assignee,
             String version
     ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, version, "");
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version,
+            String expectedResult
+    ) {
         this.type = type;
         this.priority = priority;
         this.status = (status != null) ? status : TestCaseStatus.DRAFT;
@@ -243,7 +266,7 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.legacyExpected = "";
+        this.expectedResult = expectedResult != null ? expectedResult : "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
@@ -355,6 +378,29 @@ public class TestCase {
             String assignee,
             String version
     ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, version, this.expectedResult);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version,
+            String expectedResult
+    ) {
         this.type = type;
         this.priority = priority;
         this.status = status;
@@ -362,7 +408,7 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.legacyExpected = "";
+        this.expectedResult = expectedResult != null ? expectedResult : "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
@@ -484,6 +530,14 @@ public class TestCase {
 
     public void setSteps(String steps) {
         this.steps = steps;
+    }
+
+    public String getExpectedResult() {
+        return expectedResult;
+    }
+
+    public void setExpectedResult(String expectedResult) {
+        this.expectedResult = expectedResult;
     }
 
     public String getNotes() {

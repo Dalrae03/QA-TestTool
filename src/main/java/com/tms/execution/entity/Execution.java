@@ -104,6 +104,11 @@ public class Execution {
         this.items.add(new ExecutionItem(this, testCaseId, caseTitle, versionNumber, versionLabel));
     }
 
+    public void addItem(Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
+                         Long sourceSuiteId, String sourceSuiteName) {
+        this.items.add(new ExecutionItem(this, testCaseId, caseTitle, versionNumber, versionLabel, sourceSuiteId, sourceSuiteName));
+    }
+
     public void updatePlan(Long testPlanId, String planName) {
         this.testPlanId = testPlanId;
         this.planName = planName;

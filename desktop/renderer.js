@@ -47,7 +47,7 @@ const state = {
   unclassifiedCollapsed: false,
   folderSearchQuery: "",
   sort: "updated_desc",
-  filters: { status: "", os: "", type: "", areaTagId: "", keyword: "" }
+  filters: { status: "", os: "", type: "", areaTagId: "", keyword: "", version: "" }
 };
 
 // ── elements ─────────────────────────────────────────────────────
@@ -90,6 +90,7 @@ const elements = {
   precondition:      document.getElementById("precondition"),
   stepsList:         document.getElementById("stepsList"),
   addStepButton:     document.getElementById("addStepButton"),
+  expectedResult:    document.getElementById("expectedResult"),
   notes:             document.getElementById("notes"),
   envOs:             document.getElementById("envOs"),
   envBrowser:        document.getElementById("envBrowser"),
@@ -111,6 +112,7 @@ const elements = {
   filterKeyword:     document.getElementById("filterKeyword"),
   filterType:        document.getElementById("filterType"),
   filterAreaTag:     document.getElementById("filterAreaTag"),
+  filterVersion:     document.getElementById("filterVersion"),
   statusFilterPills: document.getElementById("statusFilterPills"),
   osFilterPills:     document.getElementById("osFilterPills"),
   detailEmpty:       document.getElementById("detailEmpty"),
@@ -526,13 +528,16 @@ const _folderCtxMenu = (() => {
     const item = e.target.closest(".folder-ctx-item");
     if (!item || !_targetId) return;
     const action = item.dataset.action;
+    const folderId = _targetId;
     hide();
-    if (action === "add-sub")  addSubFolder(_targetId);
-    if (action === "rename")   renameFolder(_targetId);
-    if (action === "delete")   deleteFolder(_targetId);
+    if (action === "add-sub")  addSubFolder(folderId);
+    if (action === "rename")   renameFolder(folderId);
+    if (action === "delete")   deleteFolder(folderId);
   });
 
-  document.addEventListener("click", hide, true);
+  // 메뉴 바깥을 클릭했을 때만 닫는다 — 메뉴 내부 클릭까지 무조건 닫으면(캡처 단계가 먼저 실행돼)
+  // 위 el 클릭 핸들러가 실행되기도 전에 _targetId가 초기화돼 버튼이 눌리지 않는다.
+  document.addEventListener("click", e => { if (!el.contains(e.target)) hide(); }, true);
   document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
 
   return {
@@ -1107,6 +1112,17 @@ function renderFilterAreaTagSelect() {
   state.areaTags.forEach(tag => { const opt = document.createElement("option"); opt.value = tag.id; opt.textContent = tag.name; elements.filterAreaTag.appendChild(opt); });
   elements.filterAreaTag.value = prev;
 }
+/** 프로젝트 내 테스트케이스들의 버전 값을 훑어 필터 드롭다운을 구성한다 (존재하는 버전만 자동 파악). */
+function renderFilterVersionSelect() {
+  if (!elements.filterVersion) return;
+  const prev = elements.filterVersion.value;
+  const versions = [...new Set(
+    state.allTestCases.map(tc => (tc.version || tc.currentVersionLabel || "").trim()).filter(Boolean)
+  )].sort();
+  elements.filterVersion.innerHTML = '<option value="">버전 전체</option>';
+  versions.forEach(v => { const opt = document.createElement("option"); opt.value = v; opt.textContent = v; elements.filterVersion.appendChild(opt); });
+  elements.filterVersion.value = versions.includes(prev) ? prev : "";
+}
 function renderSelectedTagChips() {
   elements.selectedTagChips.innerHTML = "";
   state.selectedTagIds.forEach(id => {
@@ -1551,11 +1567,13 @@ function initFilters() {
   elements.filterType.addEventListener("change",    () => { state.filters.type      = elements.filterType.value;    _scheduleFilterFetch(); });
   elements.filterAreaTag.addEventListener("change", () => { state.filters.areaTagId = elements.filterAreaTag.value; _scheduleFilterFetch(); });
   elements.filterKeyword.addEventListener("input",  () => { state.filters.keyword   = elements.filterKeyword.value.trim(); _scheduleFilterFetch(); });
+  elements.filterVersion.addEventListener("change", () => { state.filters.version   = elements.filterVersion.value; _scheduleFilterFetch(); });
 }
 
-// 폴더 필터만 클라이언트에서 처리 (서버는 subfolder 재귀 미지원)
+// 폴더 필터와 버전 필터는 클라이언트에서 처리한다 (서버는 subfolder 재귀 미지원 / 버전은 자유 텍스트라 자동 목록화만 필요)
 function applyFilters(testCases) {
-  return testCases;
+  if (!state.filters.version) return testCases;
+  return testCases.filter(tc => (tc.version || tc.currentVersionLabel || "").trim() === state.filters.version);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1618,6 +1636,7 @@ async function populateForm(testCase) {
   elements.description.value  = testCase.description || "";
   elements.precondition.value = testCase.precondition|| "";
   renderSteps(parseSteps(testCase.steps));
+  elements.expectedResult.value = testCase.expectedResult || "";
   elements.notes.value        = testCase.notes       || "";
   elements.envOs.value        = testCase.os          || "";
   elements.envBrowser.value   = testCase.browser     || "";
@@ -2157,6 +2176,7 @@ function duplicateCurrentTestCase() {
   setStatusSelectorValue("DRAFT");
   elements.title.value = `${tc.title} 사본`; elements.description.value = tc.description||""; elements.precondition.value = tc.precondition||"";
   renderSteps(parseSteps(tc.steps));
+  elements.expectedResult.value = tc.expectedResult||"";
   elements.notes.value = tc.notes||""; elements.envOs.value = tc.os||""; elements.envBrowser.value = tc.browser||""; elements.envDevice.value = tc.device||"";
   if (elements.assignee) elements.assignee.value = tc.assignee || "";
   if (elements.tcVersion) elements.tcVersion.value = tc.version || "";
@@ -2185,6 +2205,7 @@ function getPayload() {
     title:        elements.title.value.trim(), description: elements.description.value.trim(),
     precondition: elements.precondition.value.trim(),
     steps:        stepsValue,
+    expectedResult: elements.expectedResult.value.trim() || null,
     notes:        elements.notes.value.trim() || null,
     os:           elements.envOs.value||null, browser: elements.envBrowser.value||null,
     device:       elements.envDevice.value||null, areaTagIds: [...state.selectedTagIds],
@@ -2285,6 +2306,7 @@ function createTableRow(tc) {
     <td><span class="badge ${tc.type==="FUNCTIONAL"?"b-func":"b-nf"}">${tc.type==="FUNCTIONAL"?"기능":"비기능"}</span></td>
     <td>${env.length?`<span class="badge b-tag">${env.map(escapeHtml).join(" · ")}</span>`:'<span style="font-size:11px;color:var(--text-muted)">미지정</span>'}</td>
     <td>${tags.map(t=>`<span class="badge b-tag">${escapeHtml(t.name)}</span>`).join(" ")}</td>
+    <td>${tc.currentVersionLabel ? `<span class="badge b-tag">${escapeHtml(tc.currentVersionLabel)}</span>` : '<span style="font-size:11px;color:var(--text-muted)">-</span>'}</td>
     <td><span style="font-size:11px;color:var(--text-muted)">${tc.updatedAt ? escapeHtml(formatDateTime(tc.updatedAt)) : "-"}</span></td>`;
   // 클릭: 상세 보기
   tr.addEventListener("click", async () => { await populateForm(tc); switchTcTab("detail"); });
@@ -2303,59 +2325,84 @@ function createTableRow(tc) {
   return tr;
 }
 
+// 테스트케이스 목록의 폴더 그룹 헤더 접기/펼치기 상태 — localStorage에 저장해 다음 실행에도 유지.
+const _collapsedTcGroups = new Set(JSON.parse(localStorage.getItem("tms.collapsedTcGroups") || "[]"));
+function toggleTcGroupCollapse(groupKey) {
+  if (_collapsedTcGroups.has(groupKey)) _collapsedTcGroups.delete(groupKey);
+  else _collapsedTcGroups.add(groupKey);
+  localStorage.setItem("tms.collapsedTcGroups", JSON.stringify([..._collapsedTcGroups]));
+  renderList();
+}
+
 // ── 그룹 헤더 행 생성 ────────────────────────────────────────────
-function _makeGrpRow(name, count, reviewCount) {
+// depth가 깊어질수록(하위 폴더일수록) 상위 폴더 헤더보다 얇은 스타일(.grp-row-sub)로 구분한다.
+// groupKey를 주면 클릭해서 접고 펼칠 수 있는 헤더가 된다.
+function _makeGrpRow(name, count, reviewCount, depth = 0, groupKey = null) {
   const tr = document.createElement("tr");
-  tr.className = "grp-row";
+  const collapsed = groupKey != null && _collapsedTcGroups.has(groupKey);
+  tr.className = (depth > 0 ? "grp-row grp-row-sub" : "grp-row") + (collapsed ? " collapsed" : "");
   const badge = reviewCount > 0
     ? `<span class="badge b-review" style="margin-left:8px;font-size:10px">검토 ${reviewCount}건</span>`
     : "";
-  tr.innerHTML = `<td colspan="8">📁 ${escapeHtml(name)}&nbsp;&nbsp;${count}${badge}</td>`;
+  const indentStyle = depth > 0 ? `padding-left:${12 + depth * 16}px` : "";
+  tr.innerHTML = `<td colspan="9" style="${indentStyle}"><span class="grp-row-caret">▾</span>📁 ${escapeHtml(name)}&nbsp;&nbsp;${count}${badge}</td>`;
+  if (groupKey != null) {
+    tr.addEventListener("click", () => toggleTcGroupCollapse(groupKey));
+  }
   return tr;
 }
 
-// ── 전체 선택 시 최상위 폴더별 그룹 ────────────────────────────
+// 폴더 1개를 헤더로 그리고, 그 폴더에 직접 속한 TC → 하위 폴더들을 재귀적으로(깊이 증가) 렌더링.
+// "전체" 뷰와 "하위 폴더가 있는 특정 폴더" 뷰가 이 함수 하나를 공유한다.
+function _renderFolderGroupRecursive(folder, filtered, depth) {
+  const allIds = [folder.id, ...getAllSubFolderIds(folder.id)];
+  const tcs = filtered.filter(tc => allIds.includes(state.folderAssignments[String(tc.id)]));
+  if (tcs.length === 0) return;
+
+  const groupKey = "folder:" + folder.id;
+  const reviewCnt = tcs.filter(tc => tc.status === "REVIEW_NEEDED").length;
+  elements.list.appendChild(_makeGrpRow(folder.name, tcs.length, reviewCnt, depth, groupKey));
+  if (_collapsedTcGroups.has(groupKey)) return;  // 접혀 있으면 하위 TC·하위 폴더는 그리지 않는다
+
+  const directTcs = filtered.filter(tc => state.folderAssignments[String(tc.id)] === folder.id);
+  directTcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+
+  const childFolders = state.folders.filter(f => f.parentId === folder.id);
+  childFolders.forEach(child => _renderFolderGroupRecursive(child, filtered, depth + 1));
+}
+
+// ── 전체 선택 시 최상위 폴더별 그룹(하위 폴더도 각자 헤더로 구분) ──
 function _renderGroupedAll(filtered) {
   const topFolders = state.folders.filter(f => !f.parentId);
-
-  topFolders.forEach(folder => {
-    const allIds = [folder.id, ...getAllSubFolderIds(folder.id)];
-    const tcs = filtered.filter(tc => allIds.includes(state.folderAssignments[String(tc.id)]));
-    if (tcs.length === 0) return;
-    const reviewCnt = tcs.filter(tc => tc.status === "REVIEW_NEEDED").length;
-    elements.list.appendChild(_makeGrpRow(folder.name, tcs.length, reviewCnt));
-    tcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
-  });
+  topFolders.forEach(folder => _renderFolderGroupRecursive(folder, filtered, 0));
 
   // 미분류 그룹
   const unTcs = filtered.filter(tc => !state.folderAssignments[String(tc.id)]);
   if (unTcs.length > 0) {
+    const groupKey = "unclassified";
     const reviewCnt = unTcs.filter(tc => tc.status === "REVIEW_NEEDED").length;
-    elements.list.appendChild(_makeGrpRow("미분류", unTcs.length, reviewCnt));
-    unTcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+    elements.list.appendChild(_makeGrpRow("미분류", unTcs.length, reviewCnt, 0, groupKey));
+    if (!_collapsedTcGroups.has(groupKey)) {
+      unTcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+    }
   }
 }
 
-// ── 하위 폴더가 있는 폴더 선택 시 하위 폴더별 그룹 ──────────────
+// ── 하위 폴더가 있는 폴더 선택 시 하위 폴더별 그룹(그 아래 폴더도 재귀적으로 구분) ──
 function _renderGroupedBySubFolders(filtered, parentFolderId) {
   const subFolders = state.folders.filter(f => f.parentId === parentFolderId);
-
-  subFolders.forEach(sub => {
-    const allIds = [sub.id, ...getAllSubFolderIds(sub.id)];
-    const tcs = filtered.filter(tc => allIds.includes(state.folderAssignments[String(tc.id)]));
-    if (tcs.length === 0) return;
-    const reviewCnt = tcs.filter(tc => tc.status === "REVIEW_NEEDED").length;
-    elements.list.appendChild(_makeGrpRow(sub.name, tcs.length, reviewCnt));
-    tcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
-  });
+  subFolders.forEach(sub => _renderFolderGroupRecursive(sub, filtered, 0));
 
   // 부모 폴더에 직접 배정된 TC (하위 폴더에 속하지 않는 것)
   const directTcs = filtered.filter(tc => state.folderAssignments[String(tc.id)] === parentFolderId);
   if (directTcs.length > 0) {
     const parentFolder = state.folders.find(f => f.id === parentFolderId);
+    const groupKey = "direct:" + parentFolderId;
     const reviewCnt = directTcs.filter(tc => tc.status === "REVIEW_NEEDED").length;
-    elements.list.appendChild(_makeGrpRow((parentFolder?.name || "") + " (기타)", directTcs.length, reviewCnt));
-    directTcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+    elements.list.appendChild(_makeGrpRow((parentFolder?.name || "") + " (기타)", directTcs.length, reviewCnt, 0, groupKey));
+    if (!_collapsedTcGroups.has(groupKey)) {
+      directTcs.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+    }
   }
 }
 
@@ -2745,8 +2792,16 @@ function _buildSuiteNodeEl(suite, depth) {
 // 테스트 플랜 / 스위트
 // ══════════════════════════════════════════════════════════════════
 
+const PLAN_STATUS_LABEL = {
+  DRAFT: "작성중", IN_REVIEW: "검토중", APPROVED: "승인완료",
+  IN_PROGRESS: "테스트 진행중", COMPLETED: "완료", ON_HOLD: "보류", CANCELLED: "취소"
+};
+
 function planStatusClass(status) {
-  return { DRAFT: "b-draft", ACTIVE: "b-ready", COMPLETED: "b-done", ARCHIVED: "b-tag" }[status] || "b-tag";
+  return {
+    DRAFT: "b-draft", IN_REVIEW: "b-mid", APPROVED: "b-ready",
+    IN_PROGRESS: "b-hi", COMPLETED: "b-done", ON_HOLD: "b-tag", CANCELLED: "b-tag"
+  }[status] || "b-tag";
 }
 
 async function loadTestPlans() {
@@ -2781,7 +2836,7 @@ function renderPlanList() {
     button.type = "button";
     button.className = `plan-list-item${plan.id === state.selectedPlanId ? " active" : ""}`;
     const runLabel = plan.completedRunCount > 0 ? `완료 ${plan.completedRunCount}건` : "완료 없음";
-    button.innerHTML = `<div class="plan-item-name">${escapeHtml(plan.name)}</div><div class="plan-item-meta"><span class="badge ${planStatusClass(plan.status)}">${escapeHtml(plan.status)}</span><span>테스트런 ${runLabel}</span></div>`;
+    button.innerHTML = `<div class="plan-item-name">${escapeHtml(plan.name)}</div><div class="plan-item-meta"><span class="badge ${planStatusClass(plan.status)}">${escapeHtml(PLAN_STATUS_LABEL[plan.status] || plan.status)}</span><span>테스트런 ${runLabel}</span></div>`;
     button.addEventListener("click", () => selectPlan(plan.id));
     list.appendChild(button);
   });
@@ -2874,18 +2929,56 @@ function showPlanForm(plan = null) {
   document.getElementById("planId").value = plan?.id ?? "";
   document.getElementById("planName").value = plan?.name ?? "";
   document.getElementById("planStatus").value = plan?.status ?? "DRAFT";
+  document.getElementById("planAssignee").value = plan?.assignee ?? "";
   document.getElementById("planStartDate").value = plan?.startDate ?? "";
   document.getElementById("planEndDate").value = plan?.endDate ?? "";
-  document.getElementById("planDescription").value = plan?.description ?? "";
   document.getElementById("deletePlanButton").disabled = !plan;
-  const g = id => document.getElementById(id);
-  if (g("planRiskItems"))       g("planRiskItems").value       = plan?.riskItems ?? "";
-  if (g("planScope"))           g("planScope").value           = plan?.scope ?? "";
-  if (g("planTeamSize"))        g("planTeamSize").value        = plan?.teamSize ?? "";
-  if (g("planTeamMembers"))     g("planTeamMembers").value     = plan?.teamMembers ?? "";
-  if (g("planQualityCriteria")) g("planQualityCriteria").value = plan?.qualityCriteria ?? "";
-  if (g("planBudget"))          g("planBudget").value          = plan?.budget ?? "";
-  if (g("planNotes"))           g("planNotes").value           = plan?.planNotes ?? "";
+
+  document.getElementById("planTargetSystem").value = plan?.targetSystem ?? "";
+  document.getElementById("planTargetVersion").value = plan?.targetVersion ?? "";
+  document.getElementById("planTestGoal").value = plan?.testGoal ?? "";
+  document.getElementById("planTestTarget").value = plan?.testTarget ?? "";
+  document.getElementById("planImpactScope").value = plan?.impactScope ?? "";
+  document.getElementById("planCommonScope").value = plan?.commonScope ?? "";
+  document.getElementById("planTestApproach").value = plan?.testApproach ?? "";
+  document.getElementById("planTestPerspective").value = plan?.testPerspective ?? "";
+  document.getElementById("planEntryCriteria").value = plan?.entryCriteria ?? "";
+  document.getElementById("planExitCriteria").value = plan?.exitCriteria ?? "";
+  document.getElementById("planServerEnvironment").value = plan?.serverEnvironmentNote ?? "";
+  document.getElementById("planTestData").value = plan?.testData ?? "";
+  document.getElementById("planDeliverables").value = plan?.deliverables ?? "";
+
+  planDeviceMatrixTable.render(parseJsonRows(plan?.deviceMatrix));
+  planScheduleTable.render(parseJsonRows(plan?.schedule));
+  planPriorityTargetsTable.render(parseJsonRows(plan?.priorityTargets));
+  const riskObj = parseJsonObject(plan?.riskAnalysis);
+  document.getElementById("planRiskMain").value = riskObj.risk ?? "";
+  document.getElementById("planRiskResponse").value = riskObj.response ?? "";
+
+  _planTcPickerSelectedIds = new Set((plan?.coreTestCases || []).map(tc => tc.id));
+  updatePlanCoreCaseSummary();
+}
+
+function parseJsonRows(value) {
+  if (!value) return [{}];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [{}];
+  } catch (_e) { return [{}]; }
+}
+
+function parseJsonObject(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_e) { return {}; }
+}
+
+function summarizeRiskAnalysis(value) {
+  const { risk, response } = parseJsonObject(value);
+  if (!risk) return null;
+  return response ? `${risk} → ${response}` : risk;
 }
 
 function showSuiteForm(suite = null) {
@@ -3026,19 +3119,33 @@ function renderSuiteCasePicker(selectedIds) {
 async function savePlan(event) {
   event.preventDefault();
   const id = document.getElementById("planId").value;
+  const v = fieldId => document.getElementById(fieldId).value.trim() || null;
   const payload = {
     name: document.getElementById("planName").value.trim(),
     status: document.getElementById("planStatus").value,
+    assignee: v("planAssignee"),
     startDate: document.getElementById("planStartDate").value || null,
     endDate: document.getElementById("planEndDate").value || null,
-    description: document.getElementById("planDescription").value.trim() || null,
-    riskItems: document.getElementById("planRiskItems")?.value.trim() || null,
-    scope: document.getElementById("planScope")?.value.trim() || null,
-    teamSize: Number(document.getElementById("planTeamSize")?.value) || null,
-    teamMembers: document.getElementById("planTeamMembers")?.value.trim() || null,
-    qualityCriteria: document.getElementById("planQualityCriteria")?.value.trim() || null,
-    budget: document.getElementById("planBudget")?.value.trim() || null,
-    planNotes: document.getElementById("planNotes")?.value.trim() || null,
+    targetSystem: v("planTargetSystem"),
+    targetVersion: v("planTargetVersion"),
+    testGoal: v("planTestGoal"),
+    testTarget: v("planTestTarget"),
+    coreTestCaseIds: [..._planTcPickerSelectedIds],
+    impactScope: v("planImpactScope"),
+    commonScope: v("planCommonScope"),
+    priorityTargets: JSON.stringify(planPriorityTargetsTable.getValue()),
+    riskAnalysis: (v("planRiskMain") || v("planRiskResponse"))
+      ? JSON.stringify({ risk: v("planRiskMain") || "", response: v("planRiskResponse") || "" })
+      : null,
+    testApproach: v("planTestApproach"),
+    testPerspective: v("planTestPerspective"),
+    entryCriteria: v("planEntryCriteria"),
+    exitCriteria: v("planExitCriteria"),
+    serverEnvironmentNote: v("planServerEnvironment"),
+    deviceMatrix: JSON.stringify(planDeviceMatrixTable.getValue()),
+    testData: v("planTestData"),
+    schedule: JSON.stringify(planScheduleTable.getValue()),
+    deliverables: v("planDeliverables"),
     projectId: state.currentProjectId || null
   };
   try {
@@ -3156,6 +3263,27 @@ function buildRunCycleItem(exec) {
   return item;
 }
 
+// 런 상세의 항목들을 출처 스위트별로 묶어서 표시 — 여러 스위트를 병합해 만든 런에서
+// 각 TC가 어느 스위트에서 왔는지 구분하기 위함. 그룹이 1개뿐이면(단일 스위트/직접 선택) 굳이 헤더를 보이지 않는다.
+function groupItemsBySuite(items) {
+  const groups = [];
+  const indexByKey = new Map();
+  items.forEach(item => {
+    const key = item.sourceSuiteId ?? "__none__";
+    if (!indexByKey.has(key)) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        key,
+        suiteId: item.sourceSuiteId ?? null,
+        suiteName: item.sourceSuiteId ? (item.sourceSuiteName || "이름 없는 스위트") : "스위트 미지정",
+        items: []
+      });
+    }
+    groups[indexByKey.get(key)].items.push(item);
+  });
+  return groups;
+}
+
 // 같은 테스트 플랜에 속한 런들을 플랜 단위 섹션으로 묶어서 표시 — 플랜이 없는 런은 "플랜 미지정" 섹션으로.
 function groupExecutionsByPlan(executions) {
   const groups = [];
@@ -3212,13 +3340,30 @@ function renderExecutionList() {
   const groups = groupExecutionsByPlan(visible);
   groups.forEach(group => {
     const planColor = planColorVar(group.planId);
+    const groupKey = String(group.key);
+    const collapsed = _collapsedRunGroups.has(groupKey);
     const header = document.createElement("div");
-    header.className = `run-plan-group-hd${planColor ? " has-plan" : ""}`;
+    header.className = `run-plan-group-hd${planColor ? " has-plan" : ""}${collapsed ? " collapsed" : ""}`;
     if (planColor) header.style.setProperty("--plan-color", planColor);
-    header.innerHTML = `<span class="run-plan-group-dot"></span><span class="run-plan-group-name">${escapeHtml(group.planName)}</span><span class="badge b-tag">${group.items.length}</span>`;
+    header.innerHTML = `<span class="run-plan-group-caret">▾</span><span class="run-plan-group-dot"></span><span class="run-plan-group-name">${escapeHtml(group.planName)}</span><span class="badge b-tag">${group.items.length}</span>`;
+    header.addEventListener("click", () => toggleRunGroupCollapse(groupKey));
     list.appendChild(header);
-    group.items.forEach(exec => list.appendChild(buildRunCycleItem(exec)));
+
+    const body = document.createElement("div");
+    body.className = "run-plan-group-body";
+    body.hidden = collapsed;
+    group.items.forEach(exec => body.appendChild(buildRunCycleItem(exec)));
+    list.appendChild(body);
   });
+}
+
+// 플랜 그룹 접기/펼치기 상태 — localStorage에 저장해 다음 실행에도 유지.
+const _collapsedRunGroups = new Set(JSON.parse(localStorage.getItem("tms.collapsedRunGroups") || "[]"));
+function toggleRunGroupCollapse(groupKey) {
+  if (_collapsedRunGroups.has(groupKey)) _collapsedRunGroups.delete(groupKey);
+  else _collapsedRunGroups.add(groupKey);
+  localStorage.setItem("tms.collapsedRunGroups", JSON.stringify([..._collapsedRunGroups]));
+  renderExecutionList();
 }
 
 async function openExecution(id) {
@@ -3486,7 +3631,19 @@ function renderExecutionDetail(exec) {
   const cont = document.getElementById("runDetailItems");
   cont.innerHTML = "";
   const buildFn = window._patchedBuildRunItemRow || buildRunItemRow;
-  (exec.items || []).forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+  const items = exec.items || [];
+  const suiteGroups = groupItemsBySuite(items);
+  if (suiteGroups.length > 1) {
+    suiteGroups.forEach(group => {
+      const header = document.createElement("div");
+      header.className = "run-item-suite-hd";
+      header.innerHTML = `<span class="run-item-suite-name">📋 ${escapeHtml(group.suiteName)}</span><span class="badge b-tag">${group.items.length}</span>`;
+      cont.appendChild(header);
+      group.items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+    });
+  } else {
+    items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+  }
   renderBulkBar();
 }
 
@@ -3896,32 +4053,44 @@ async function openNewRunModal() {
   document.getElementById("runAssigneeInput").value = "";
   _runTcPickerAllTcs = [];
   _runTcPickerSelectedIds = new Set();
+  _runSuitePickerSelectedIds = new Set();
   setRunSourceMode("suite");
   await populateRunSuiteSelect(null);
   document.getElementById("newRunModal").hidden = false;
 }
 
+let _runSuitePickerSelectedIds = new Set();
+
 async function populateRunSuiteSelect(planId) {
-  const suiteSel = document.getElementById("runSuiteSelect");
-  suiteSel.innerHTML = '<option value="">스위트를 선택하세요</option>';
+  const listEl = document.getElementById("runSuiteCheckList");
+  listEl.innerHTML = '<div class="tc-picker-empty">불러오는 중...</div>';
   try {
     const qs = state.currentProjectId ? `?projectId=${state.currentProjectId}` : "";
     const suites = await request(`/api/suites${qs}`, { method: "GET" });
     if (suites.length === 0) {
-      suiteSel.innerHTML += '<option value="" disabled>스위트 없음</option>';
+      listEl.innerHTML = '<div class="tc-picker-empty">스위트 없음</div>';
       return;
     }
+    listEl.innerHTML = "";
     suites.forEach(s => {
       const count = s.testCases?.length || 0;
-      const opt = document.createElement("option");
-      opt.value = s.id;
-      opt.disabled = count === 0;
-      opt.textContent = `${s.name} (${count}건${s.testPlanName ? " · " + s.testPlanName : ""}${count === 0 ? " · 생성 불가" : ""})`;
-      suiteSel.appendChild(opt);
+      const disabled = count === 0;
+      const row = document.createElement("label");
+      row.className = "tc-picker-tc";
+      row.style.opacity = disabled ? .5 : 1;
+      row.style.cursor = disabled ? "not-allowed" : "pointer";
+      row.innerHTML =
+        `<input type="checkbox" value="${s.id}" ${disabled ? "disabled" : ""}>` +
+        `<div class="tc-picker-tc-info"><div class="tc-picker-tc-title">${escapeHtml(s.name)}</div>` +
+        `<div class="tc-picker-tc-badges">${count}건${s.testPlanName ? " · " + escapeHtml(s.testPlanName) : ""}${disabled ? " · 생성 불가" : ""}</div></div>`;
+      const checkbox = row.querySelector("input");
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) _runSuitePickerSelectedIds.add(s.id);
+        else _runSuitePickerSelectedIds.delete(s.id);
+      });
+      listEl.appendChild(row);
     });
-    const first = suites.find(s => (s.testCases?.length || 0) > 0);
-    if (first) suiteSel.value = String(first.id);
-  } catch (e) { suiteSel.innerHTML += '<option value="" disabled>조회 실패</option>'; }
+  } catch (e) { listEl.innerHTML = '<div class="tc-picker-empty">조회 실패</div>'; }
 }
 
 async function createExecution() {
@@ -3943,10 +4112,10 @@ async function createExecution() {
       version
     };
   } else {
-    const suiteId = Number(document.getElementById("runSuiteSelect").value);
-    if (!suiteId) { _toast("스위트를 선택하세요.", true); return; }
+    if (_runSuitePickerSelectedIds.size === 0) { _toast("스위트를 1개 이상 선택하세요.", true); return; }
     payload = {
-      suiteId,
+      suiteIds: [..._runSuitePickerSelectedIds],
+      projectId: state.currentProjectId || null,
       testConfigurationId,
       name: document.getElementById("runNameInput").value.trim() || null,
       assignee: document.getElementById("runAssigneeInput").value.trim() || null,
@@ -4002,7 +4171,8 @@ async function loadTestCases() {
     state.allTestCases = all;
     state.testCases    = all;
     _rebuildFolderAssignments();
-    const hasFilter = state.filters.status || state.filters.os || state.filters.type || state.filters.areaTagId || state.filters.keyword;
+    renderFilterVersionSelect();
+    const hasFilter = state.filters.status || state.filters.os || state.filters.type || state.filters.areaTagId || state.filters.keyword || state.filters.version;
     if (hasFilter) {
       await fetchFilteredTestCases();   // 필터 재적용
     } else {
@@ -4189,6 +4359,111 @@ function getStepsValue() { return Array.from(elements.stepsList.querySelectorAll
 function parseSteps(v) { const s = String(v??"").split("\n").map(s=>s.trim()).filter(Boolean); return s.length > 0 ? s : [""]; }
 
 // ══════════════════════════════════════════════════════════════════
+// 범용 동적 표 — 다컬럼 addable/removable rows (테스트 플랜 9.2 디바이스
+// 매트릭스, 10 일정 및 절차 표에서 재사용). .step-row의 번호/삭제버튼
+// 인터랙션을 다컬럼으로 일반화한 것 — JSON 직렬화는 호출부 책임이다.
+// ══════════════════════════════════════════════════════════════════
+
+function createDynTable(containerId, columns) {
+  const container = document.getElementById(containerId);
+  if (!container) return { render() {}, getValue() { return []; }, addRow() {} };
+  container.classList.add("dyn-table");
+
+  const gridCols = `repeat(${columns.length}, 1fr) auto`;
+
+  const head = document.createElement("div");
+  head.className = "dyn-table-head";
+  head.style.gridTemplateColumns = gridCols;
+  columns.forEach(col => {
+    const span = document.createElement("span");
+    span.textContent = col.label;
+    head.appendChild(span);
+  });
+  head.appendChild(document.createElement("span"));
+
+  const body = document.createElement("div");
+  body.className = "dyn-table-body";
+
+  function buildRow(rowData = {}) {
+    const row = document.createElement("div");
+    row.className = "dyn-table-row";
+    row.style.gridTemplateColumns = gridCols;
+    columns.forEach(col => {
+      if (col.auto) {
+        const span = document.createElement("span");
+        span.className = "dyn-table-auto-label";
+        span.dataset.key = col.key;
+        row.appendChild(span);
+        return;
+      }
+      const input = document.createElement("input");
+      input.className = "form-input dyn-table-input";
+      input.dataset.key = col.key;
+      input.placeholder = col.placeholder || "";
+      input.value = rowData[col.key] ?? "";
+      row.appendChild(input);
+    });
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "dyn-table-remove-btn"; btn.textContent = "삭제";
+    btn.addEventListener("click", () => { row.remove(); if (body.children.length === 0) appendRow(); renumberAutoLabels(); });
+    row.appendChild(btn);
+    return row;
+  }
+
+  function renumberAutoLabels() {
+    const autoCols = columns.filter(col => col.auto);
+    if (autoCols.length === 0) return;
+    Array.from(body.children).forEach((row, i) => {
+      autoCols.forEach(col => {
+        const span = row.querySelector(`.dyn-table-auto-label[data-key="${col.key}"]`);
+        if (span) span.textContent = (col.labelPrefix || "") + (i + 1);
+      });
+    });
+  }
+
+  function appendRow(initial = {}) { body.appendChild(buildRow(initial)); renumberAutoLabels(); }
+
+  function render(rows) {
+    body.innerHTML = "";
+    const list = Array.isArray(rows) && rows.length > 0 ? rows : [{}];
+    list.forEach(r => appendRow(r));
+  }
+
+  function getValue() {
+    return Array.from(body.querySelectorAll(".dyn-table-row")).map(row => {
+      const obj = {};
+      row.querySelectorAll(".dyn-table-input").forEach(input => { obj[input.dataset.key] = input.value.trim(); });
+      row.querySelectorAll(".dyn-table-auto-label").forEach(span => { obj[span.dataset.key] = span.textContent; });
+      return obj;
+    });
+  }
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button"; addBtn.className = "btn btn-sm dyn-table-add-btn"; addBtn.textContent = "＋ 행 추가";
+  addBtn.addEventListener("click", () => appendRow());
+
+  container.innerHTML = "";
+  container.append(head, body, addBtn);
+  render([{}]);
+
+  return { render, getValue, addRow: appendRow };
+}
+
+const planDeviceMatrixTable = createDynTable("planDeviceMatrix", [
+  { key: "platform", label: "플랫폼", placeholder: "예) iOS" },
+  { key: "device",   label: "디바이스", placeholder: "예) iPhone 15" }
+]);
+const planScheduleTable = createDynTable("planSchedule", [
+  { key: "period", label: "기간", placeholder: "예) 7/1 - 7/5" },
+  { key: "phase",  label: "단계", placeholder: "예) 단위 테스트" },
+  { key: "task",   label: "작업", placeholder: "예) 로그인 기능 검증" }
+]);
+const planPriorityTargetsTable = createDynTable("planPriorityTargets", [
+  { key: "priority", label: "우선순위", auto: true, labelPrefix: "Priority " },
+  { key: "content",  label: "내용", placeholder: "예) 결제, 로그인 등 핵심 기능" }
+]);
+
+// ══════════════════════════════════════════════════════════════════
 // 부트스트랩
 // ══════════════════════════════════════════════════════════════════
 
@@ -4337,18 +4612,14 @@ async function bootstrap() {
   maybeAutoBackup().catch(() => {});
 }
 
-// ── 사이드바 리사이즈 ─────────────────────────────────────────────
-(function initSidebarResize() {
-  const handle  = document.getElementById("sidebarResizeHandle");
-  const sidebar = document.getElementById("tcSidebar");
-  if (!handle || !sidebar) return;
+// ── 사이드바 리사이즈 (좌측 열 폭을 드래그로 조절, localStorage에 폭 저장) ──
+function initColumnResize({ handleId, columnId, storageKey, minW, maxW }) {
+  const handle = document.getElementById(handleId);
+  const column = document.getElementById(columnId);
+  if (!handle || !column) return;
 
-  const MIN_W = 150;
-  const MAX_W = 500;
-  const STORAGE_KEY = "tms.sidebarWidth";
-
-  const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
-  if (saved) sidebar.style.width = saved + "px";
+  const saved = parseInt(localStorage.getItem(storageKey), 10);
+  if (saved) column.style.width = Math.min(maxW, Math.max(minW, saved)) + "px";
 
   handle.addEventListener("mousedown", e => {
     e.preventDefault();
@@ -4357,21 +4628,24 @@ async function bootstrap() {
     document.body.style.userSelect = "none";
 
     const onMove = mv => {
-      const w = Math.min(MAX_W, Math.max(MIN_W, mv.clientX - sidebar.getBoundingClientRect().left));
-      sidebar.style.width = w + "px";
+      const w = Math.min(maxW, Math.max(minW, mv.clientX - column.getBoundingClientRect().left));
+      column.style.width = w + "px";
     };
     const onUp = () => {
       handle.classList.remove("dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      localStorage.setItem(STORAGE_KEY, parseInt(sidebar.style.width, 10));
+      localStorage.setItem(storageKey, parseInt(column.style.width, 10));
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup",   onUp);
     };
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup",   onUp);
   });
-})();
+}
+
+initColumnResize({ handleId: "sidebarResizeHandle", columnId: "tcSidebar", storageKey: "tms.sidebarWidth", minW: 150, maxW: 500 });
+initColumnResize({ handleId: "runListResizeHandle", columnId: "runListColumn", storageKey: "tms.runListWidth", minW: 200, maxW: 600 });
 
 // ══════════════════════════════════════════════════════════════════
 // 사이드바 토글 (#1)
@@ -4424,6 +4698,13 @@ async function refreshAllForProjectSwitch() {
   state.testSuites = [];
   state.selectedExecutionId = null;
   state.currentExec = null;
+  // 열려 있던 테스트케이스 상세는 다른 프로젝트 소속일 수 있으므로 비워둔다 —
+  // 그대로 두면 목록/실행기록은 새 프로젝트 기준으로 바뀌는데 상세 패널만 이전 프로젝트의 케이스를 계속 보여주게 된다.
+  hideEditor();
+  setSelected(null);
+  state.testRuns = [];
+  renderTestRuns();
+  updateRunStatus("");
   await loadTestCases();
   await loadFolders();
   await loadAreaTags();
@@ -4441,15 +4722,44 @@ async function onProjectChange() {
   await refreshAllForProjectSwitch();
 }
 
+state.editingProjectId = null;
+
 function showCreateProjectModal() {
+  state.editingProjectId = null;
+  document.getElementById("createProjectModalTitle").textContent = "새 프로젝트 만들기";
+  document.getElementById("createProjectSubmitButton").textContent = "생성";
   document.getElementById("newProjectName").value = "";
   document.getElementById("newProjectDesc").value = "";
   document.getElementById("newProjectOwner").value = "";
   document.getElementById("createProjectModal").hidden = false;
+  focusProjectModalNameInput();
+}
+
+function showEditProjectModal(project) {
+  state.editingProjectId = project.id;
+  document.getElementById("createProjectModalTitle").textContent = "프로젝트 수정";
+  document.getElementById("createProjectSubmitButton").textContent = "저장";
+  document.getElementById("newProjectName").value = project.name || "";
+  document.getElementById("newProjectDesc").value = project.description || "";
+  document.getElementById("newProjectOwner").value = project.owner || "";
+  document.getElementById("createProjectModal").hidden = false;
+  focusProjectModalNameInput();
+}
+
+// 삭제 확인(window.confirm) 직후 모달을 열면 Electron 창이 OS 키보드 포커스를 되찾지 못해
+// 입력 칸을 클릭해도 타이핑이 씹히는 경우가 있다 — 창 포커스를 명시적으로 되돌리고 입력칸에 포커스한다.
+function focusProjectModalNameInput() {
+  window.focus();
+  const input = document.getElementById("newProjectName");
+  setTimeout(() => input?.focus(), 0);
 }
 
 function closeCreateProjectModal() {
   document.getElementById("createProjectModal").hidden = true;
+}
+
+function submitProjectModal() {
+  return state.editingProjectId ? updateProject(state.editingProjectId) : createProject();
 }
 
 async function createProject() {
@@ -4470,6 +4780,46 @@ async function createProject() {
     const sel = document.getElementById("projectSelect");
     if (sel) { sel.value = String(state.currentProjectId); await onProjectChange(); }
   } catch (e) { _toast(`프로젝트 생성 실패: ${e.message}`, true); }
+}
+
+async function updateProject(id) {
+  const name = document.getElementById("newProjectName").value.trim();
+  if (!name) { _toast("프로젝트 이름을 입력하세요.", true); return; }
+  try {
+    await request(`/api/projects/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        name,
+        description: document.getElementById("newProjectDesc").value.trim() || null,
+        owner: document.getElementById("newProjectOwner").value.trim() || null
+      })
+    });
+    closeCreateProjectModal();
+    _toast(`프로젝트 '${name}'를 수정했습니다.`);
+    await loadProjects();
+    const sel = document.getElementById("projectSelect");
+    if (sel && state.currentProjectId) sel.value = String(state.currentProjectId);
+    renderDashboard();
+  } catch (e) { _toast(`프로젝트 수정 실패: ${e.message}`, true); }
+}
+
+async function deleteProjectConfirm(id, name) {
+  const confirmed = window.confirm(`프로젝트 '${name}'를 삭제할까요? 삭제한 프로젝트는 복구할 수 없습니다.`);
+  window.focus();  // 네이티브 확인창이 닫힌 뒤 Electron 창이 키보드 포커스를 잃는 경우가 있어 명시적으로 되찾는다.
+  if (!confirmed) return;
+  try {
+    await request(`/api/projects/${id}`, { method: "DELETE" });
+    _toast(`프로젝트 '${name}'를 삭제했습니다.`);
+    const wasCurrent = state.currentProjectId === id;
+    await loadProjects();
+    if (wasCurrent) {
+      const sel = document.getElementById("projectSelect");
+      if (sel) sel.value = state.currentProjectId ? String(state.currentProjectId) : "";
+      await refreshAllForProjectSwitch();
+    } else {
+      renderDashboard();
+    }
+  } catch (e) { _toast(`프로젝트 삭제 실패: ${e.message}`, true); }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4955,15 +5305,67 @@ function confirmFailureReason() {
 // 대시보드 프로젝트 카드 (#2)
 // ══════════════════════════════════════════════════════════════════
 
+// ── 프로젝트 카드 케밥 메뉴 (수정/삭제) ──────────────────────────────
+const _projectCtxMenu = (() => {
+  const el = document.createElement("div");
+  el.className = "folder-ctx-menu";
+  el.innerHTML = `
+    <div class="folder-ctx-item" data-action="edit">✏️ 수정</div>
+    <div class="folder-ctx-sep"></div>
+    <div class="folder-ctx-item danger" data-action="delete">🗑 삭제</div>
+  `;
+  document.body.appendChild(el);
+
+  let _targetId = null;
+
+  const hide = () => { el.classList.remove("show"); _targetId = null; };
+
+  el.addEventListener("click", e => {
+    const item = e.target.closest(".folder-ctx-item");
+    if (!item || _targetId == null) return;
+    const action = item.dataset.action;
+    const project = state.dashboardProjects?.find(p => p.id === _targetId);
+    hide();
+    if (!project) return;
+    if (action === "edit") showEditProjectModal(project);
+    if (action === "delete") deleteProjectConfirm(project.id, project.name);
+  });
+
+  // 메뉴 바깥을 클릭했을 때만 닫는다 — 내부 클릭까지 캡처 단계에서 닫아버리면
+  // 위 el 클릭 핸들러가 실행되기 전에 _targetId가 초기화돼 버튼이 눌리지 않는다.
+  document.addEventListener("click", e => { if (!el.contains(e.target)) hide(); }, true);
+  document.addEventListener("keydown", e => { if (e.key === "Escape") hide(); });
+
+  return {
+    show(projectId, x, y) {
+      _targetId = projectId;
+      el.style.left = x + "px";
+      el.style.top  = y + "px";
+      el.classList.add("show");
+      const rect = el.getBoundingClientRect();
+      if (rect.bottom > window.innerHeight) el.style.top = (y - rect.height) + "px";
+      if (rect.right  > window.innerWidth)  el.style.left = (x - rect.width)  + "px";
+    }
+  };
+})();
+
+function openProjectCardMenu(event, projectId) {
+  event.stopPropagation();
+  const rect = event.currentTarget.getBoundingClientRect();
+  _projectCtxMenu.show(projectId, rect.left, rect.bottom + 4);
+}
+
 async function renderDashboardProjects() {
   const grid = document.getElementById("dashProjectGrid");
   if (!grid) return;
   try {
     const projects = await request("/api/projects");
+    state.dashboardProjects = projects;
     if (!projects || projects.length === 0) { grid.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">프로젝트 없음</span>'; return; }
     grid.innerHTML = projects.map(p => `
       <div class="dash-project-card${state.currentProjectId === p.id ? " active" : ""}"
            onclick="switchDashboardProject(${p.id})" title="${escapeHtml(p.description || "")}">
+        <button type="button" class="dash-project-kebab" onclick="openProjectCardMenu(event, ${p.id})" aria-label="프로젝트 메뉴">⋮</button>
         <div class="dash-project-name">${escapeHtml(p.name)}</div>
         <div class="dash-project-meta">${p.owner ? escapeHtml(p.owner) : "담당자 없음"}</div>
       </div>`).join("");
@@ -4989,16 +5391,14 @@ async function renderRunPlanSummary(exec) {
   try {
     const plan = await request(`/api/test-plans/${exec.testPlanId}`);
     const fields = [
-      { label: "플랜 이름", value: plan.name },
-      { label: "상태",     value: plan.status },
-      { label: "기간",     value: [plan.startDate, plan.endDate].filter(Boolean).join(" ~ ") || null },
-      { label: "범위",     value: plan.scope },
-      { label: "팀 규모",  value: plan.teamSize ? `${plan.teamSize}명` : null },
-      { label: "팀원",     value: plan.teamMembers },
-      { label: "리스크",   value: plan.riskItems },
-      { label: "품질 기준",value: plan.qualityCriteria },
-      { label: "예산",     value: plan.budget },
-      { label: "메모",     value: plan.planNotes }
+      { label: "플랜 이름",   value: plan.name },
+      { label: "상태",       value: PLAN_STATUS_LABEL[plan.status] || plan.status },
+      { label: "기간",       value: [plan.startDate, plan.endDate].filter(Boolean).join(" ~ ") || null },
+      { label: "대상 시스템", value: plan.targetSystem },
+      { label: "대상 버전",   value: plan.targetVersion },
+      { label: "테스트 목표", value: plan.testGoal },
+      { label: "핵심 테스트 대상", value: plan.coreTestCases?.length ? `${plan.coreTestCases.length}건` : null },
+      { label: "주요 리스크", value: summarizeRiskAnalysis(plan.riskAnalysis) }
     ].filter(f => f.value);
     el.hidden = false;
     el.innerHTML = `<div class="run-plan-summary-title">📋 연결된 테스트 플랜</div>
@@ -5451,6 +5851,172 @@ function toggleRunTcPickerItem(event, id) {
 function updateRunTcPickerCount() {
   const el = document.getElementById("runTcPickerCount");
   if (el) el.textContent = _runTcPickerSelectedIds.size;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 테스트 플랜 3.1 핵심 테스트 대상 — TC 피커 세 번째 인스턴스.
+// 스위트 관리/새 테스트런 피커와 동일한 UX를 별도 상태·DOM으로 분리한다
+// (선례: 위 "새 테스트런" 피커 주석 참고 — 동시에 열리지 않아도 DOM id
+// 충돌을 피하려고 함수/상태를 통째로 분리해왔다).
+// ══════════════════════════════════════════════════════════════════
+
+let _planTcPickerAllTcs = [];
+let _planTcPickerSelectedIds = new Set();
+
+async function initPlanTcPicker() {
+  const qs = state.currentProjectId ? `?projectId=${state.currentProjectId}` : "";
+  try {
+    _planTcPickerAllTcs = await request(`/api/testcases${qs}`);
+  } catch (_e) { _planTcPickerAllTcs = []; }
+  document.getElementById("planTcPickerSearch").value = "";
+  document.getElementById("planTcPickerPriority").value = "";
+  document.getElementById("planTcPickerStatus").value = "";
+  renderPlanTcPickerTree(_planTcPickerAllTcs);
+}
+
+function filterPlanTcPicker() {
+  const keyword  = document.getElementById("planTcPickerSearch").value.toLowerCase();
+  const priority = document.getElementById("planTcPickerPriority").value;
+  const status   = document.getElementById("planTcPickerStatus").value;
+  const filtered = _planTcPickerAllTcs.filter(tc => {
+    if (keyword  && !tc.title.toLowerCase().includes(keyword))  return false;
+    if (priority && tc.priority !== priority)                    return false;
+    if (status   && tc.status   !== status)                     return false;
+    return true;
+  });
+  renderPlanTcPickerTree(filtered);
+}
+
+function renderPlanTcPickerTree(tcs) {
+  const tree = document.getElementById("planTcPickerTree");
+  if (!tree) return;
+
+  if (tcs.length === 0) {
+    tree.innerHTML = '<div class="tc-picker-empty">조건에 맞는 테스트케이스가 없습니다.</div>';
+    updatePlanTcPickerCount();
+    return;
+  }
+
+  const groups = {};
+  const noFolder = [];
+  for (const tc of tcs) {
+    const fid = tc.folderId;
+    if (fid) {
+      if (!groups[fid]) groups[fid] = { name: tc.folderName || `폴더 ${fid}`, tcs: [] };
+      groups[fid].tcs.push(tc);
+    } else {
+      noFolder.push(tc);
+    }
+  }
+
+  const allGroups = Object.entries(groups).map(([, g]) => g);
+  if (noFolder.length) allGroups.push({ name: "미분류", tcs: noFolder });
+
+  let html = "";
+  for (const g of allGroups) {
+    const ids = g.tcs.map(t => t.id).join(",");
+    const selCount = g.tcs.filter(t => _planTcPickerSelectedIds.has(t.id)).length;
+    const allSel = selCount === g.tcs.length;
+    const someSel = selCount > 0 && !allSel;
+    html += `<div class="tc-picker-folder" data-folder-tcids="${ids}">
+      <input type="checkbox" class="tc-picker-folder-chk" ${allSel ? "checked" : ""}
+        ${someSel ? "data-indeterminate='true'" : ""}
+        onclick="event.stopPropagation();togglePlanTcPickerFolderSelect(this)">
+      <span class="tc-picker-folder-arrow" onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">▼</span>
+      <span onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">📁 ${escapeHtml(g.name)}</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${g.tcs.length}건</span>
+    </div>`;
+    for (const tc of g.tcs) {
+      const chk = _planTcPickerSelectedIds.has(tc.id) ? "checked" : "";
+      const priCls = { HIGH:"b-hi", MEDIUM:"b-mid", LOW:"b-lo" }[tc.priority] || "b-mid";
+      html += `<div class="tc-picker-tc" onclick="togglePlanTcPickerItem(event,${tc.id})">
+        <input type="checkbox" ${chk} data-tcid="${tc.id}" onclick="event.stopPropagation();togglePlanTcPickerItem(event,${tc.id})">
+        <div class="tc-picker-tc-info">
+          <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3,"0")} ${escapeHtml(tc.title)}</div>
+          <div class="tc-picker-tc-badges">
+            <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
+            <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
+          </div>
+        </div>
+      </div>`;
+    }
+  }
+  tree.innerHTML = html;
+
+  tree.querySelectorAll(".tc-picker-folder-chk[data-indeterminate='true']").forEach(cb => {
+    cb.indeterminate = true;
+  });
+
+  updatePlanTcPickerCount();
+}
+
+function togglePlanTcPickerFolderSelect(chkEl) {
+  const folderEl = chkEl.closest(".tc-picker-folder");
+  if (!folderEl) return;
+  const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
+  const allSelected = ids.every(id => _planTcPickerSelectedIds.has(id));
+  if (allSelected) {
+    ids.forEach(id => _planTcPickerSelectedIds.delete(id));
+    chkEl.checked = false;
+    chkEl.indeterminate = false;
+  } else {
+    ids.forEach(id => _planTcPickerSelectedIds.add(id));
+    chkEl.checked = true;
+    chkEl.indeterminate = false;
+  }
+  ids.forEach(id => {
+    const cb = document.querySelector(`#planTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
+    if (cb) cb.checked = _planTcPickerSelectedIds.has(id);
+  });
+  updatePlanTcPickerCount();
+}
+
+function togglePlanTcPickerItem(event, id) {
+  if (_planTcPickerSelectedIds.has(id)) {
+    _planTcPickerSelectedIds.delete(id);
+  } else {
+    _planTcPickerSelectedIds.add(id);
+  }
+  const chk = document.querySelector(`#planTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
+  if (chk) chk.checked = _planTcPickerSelectedIds.has(id);
+  const tcRow = chk?.closest(".tc-picker-tc");
+  let folderEl = tcRow?.previousElementSibling;
+  while (folderEl && !folderEl.classList.contains("tc-picker-folder")) {
+    folderEl = folderEl.previousElementSibling;
+  }
+  if (folderEl) {
+    const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
+    const selCount = ids.filter(i => _planTcPickerSelectedIds.has(i)).length;
+    const folderChk = folderEl.querySelector(".tc-picker-folder-chk");
+    if (folderChk) {
+      folderChk.checked = selCount === ids.length;
+      folderChk.indeterminate = selCount > 0 && selCount < ids.length;
+    }
+  }
+  updatePlanTcPickerCount();
+}
+
+function updatePlanTcPickerCount() {
+  const el = document.getElementById("planTcPickerCount");
+  if (el) el.textContent = _planTcPickerSelectedIds.size;
+}
+
+function updatePlanCoreCaseSummary() {
+  const el = document.getElementById("planCoreCaseSummary");
+  if (!el) return;
+  const n = _planTcPickerSelectedIds.size;
+  el.textContent = n === 0 ? "선택된 테스트케이스 없음" : `${n}건 선택됨`;
+}
+
+async function openPlanTcPickerModal() {
+  document.getElementById("planTcPickerModal").hidden = false;
+  if (_planTcPickerAllTcs.length === 0) await initPlanTcPicker();
+  else renderPlanTcPickerTree(_planTcPickerAllTcs);
+}
+
+function closePlanTcPickerModal() {
+  document.getElementById("planTcPickerModal").hidden = true;
+  updatePlanCoreCaseSummary();
 }
 
 function setRunSourceMode(mode) {

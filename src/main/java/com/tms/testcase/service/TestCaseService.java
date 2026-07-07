@@ -113,10 +113,32 @@ public class TestCaseService {
         if (keyword != null && !keyword.isBlank()) spec = spec.and(TestCaseSpecification.containsKeyword(keyword));
         if (folderId != null) spec = spec.and(TestCaseSpecification.hasFolder(folderId));
 
-        return testCaseRepository.findAll(spec)
-                .stream()
-                .map(TestCaseResponse::from)
+        List<TestCase> testCases = testCaseRepository.findAll(spec);
+        Map<Long, String> latestVersionLabelByTestCaseId = latestVersionLabelsFor(testCases);
+        return testCases.stream()
+                .map(tc -> TestCaseResponse.from(tc, resolveCurrentVersionLabel(tc, latestVersionLabelByTestCaseId)))
                 .toList();
+    }
+
+    /** 목록에 있는 케이스들의 "최신 버전 라벨"을 한 번의 쿼리로 일괄 조회 — 케이스별로 따로 조회하지 않는다(N+1 방지). */
+    private Map<Long, String> latestVersionLabelsFor(List<TestCase> testCases) {
+        List<Long> ids = testCases.stream().map(TestCase::getId).toList();
+        if (ids.isEmpty()) return Map.of();
+        Map<Long, TestCaseVersion> latestByTestCaseId = new java.util.HashMap<>();
+        for (TestCaseVersion v : testCaseVersionRepository.findAllByTestCaseIdIn(ids)) {
+            latestByTestCaseId.merge(v.getTestCaseId(), v,
+                    (a, b) -> a.getVersionNumber() >= b.getVersionNumber() ? a : b);
+        }
+        Map<Long, String> labelByTestCaseId = new java.util.HashMap<>();
+        latestByTestCaseId.forEach((id, version) -> labelByTestCaseId.put(id, version.getLabel()));
+        return labelByTestCaseId;
+    }
+
+    /** 사용자가 버전 라벨을 직접 입력하지 않았으면 최신 버전 이력의 라벨로 폴백한다. */
+    private String resolveCurrentVersionLabel(TestCase testCase, Map<Long, String> latestVersionLabelByTestCaseId) {
+        String raw = testCase.getVersion();
+        if (raw != null && !raw.isBlank()) return raw;
+        return latestVersionLabelByTestCaseId.get(testCase.getId());
     }
 
     public TestCaseResponse getTestCase(Long id) {
@@ -146,7 +168,8 @@ public class TestCaseService {
                 serverEnvironment,
                 configuration,
                 request.assignee(),
-                request.version()
+                request.version(),
+                request.expectedResult()
         );
         testCase.moveToFolder(folder);
         testCase.setProjectId(request.projectId());
@@ -182,7 +205,8 @@ public class TestCaseService {
                 serverEnvironment,
                 configuration,
                 request.assignee(),
-                request.version()
+                request.version(),
+                request.expectedResult()
         );
         testCase.moveToFolder(folder);
         if (request.projectId() != null) testCase.setProjectId(request.projectId());
@@ -266,7 +290,8 @@ public class TestCaseService {
                 serverEnvironment,
                 configuration,
                 version.getAssignee(),
-                version.getVersion()
+                version.getVersion(),
+                version.getExpectedResult()
         );
         testCase.moveToFolder(folder);
         recordTestCaseUpdates(testCaseId, before, TestCaseAuditSnapshot.from(testCase));
@@ -383,6 +408,7 @@ public class TestCaseService {
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "description", before.description(), after.description());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "precondition", before.precondition(), after.precondition());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "steps", before.steps(), after.steps());
+        auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "expectedResult", before.expectedResult(), after.expectedResult());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "notes", before.notes(), after.notes());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "os", before.os(), after.os());
         auditLogService.recordIfChanged(AuditLogService.TEST_CASE, id, AuditAction.UPDATED, "browser", before.browser(), after.browser());
@@ -427,7 +453,8 @@ public class TestCaseService {
                 testCase.getTestConfiguration() == null ? null : testCase.getTestConfiguration().getId(),
                 testCase.getTestConfiguration() == null ? null : testCase.getTestConfiguration().getName(),
                 testCase.getAreaTags().stream().map(AreaTag::getId).map(String::valueOf).collect(Collectors.joining(",")),
-                testCase.getAreaTags().stream().map(AreaTag::getName).collect(Collectors.joining(", "))
+                testCase.getAreaTags().stream().map(AreaTag::getName).collect(Collectors.joining(", ")),
+                testCase.getExpectedResult()
         ));
         auditLogService.record(AuditLogService.TEST_CASE, testCase.getId(), AuditAction.VERSION_CREATED, "version", null, snapshot.getLabel());
     }
@@ -459,6 +486,7 @@ public class TestCaseService {
             String description,
             String precondition,
             String steps,
+            String expectedResult,
             String notes,
             TestCaseOs os,
             TestCaseBrowser browser,
@@ -479,6 +507,7 @@ public class TestCaseService {
                     testCase.getDescription(),
                     testCase.getPrecondition(),
                     testCase.getSteps(),
+                    testCase.getExpectedResult(),
                     testCase.getNotes(),
                     testCase.getOs(),
                     testCase.getBrowser(),

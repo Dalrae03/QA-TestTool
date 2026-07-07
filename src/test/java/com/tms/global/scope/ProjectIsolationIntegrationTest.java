@@ -74,6 +74,7 @@ class ProjectIsolationIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateExecutionRequest(
                                 null,
+                                null,
                                 List.of(projectOneCase.getId(), projectTwoCase.getId()),
                                 null,
                                 1L,

@@ -53,7 +53,9 @@ public record CreateTestCaseRequest(
 
         Long folderId,
 
-        Long projectId
+        Long projectId,
+
+        String expectedResult
 ) {
     public CreateTestCaseRequest(
             TestCaseType type, TestCasePriority priority, TestCaseStatus status, String title,
@@ -61,7 +63,7 @@ public record CreateTestCaseRequest(
             TestCaseBrowser browser, TestCaseDevice device, List<Long> areaTagIds
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, null, null, null, null, null, null);
+                os, browser, device, areaTagIds, null, null, null, null, null, null, null);
     }
 
     public CreateTestCaseRequest(
@@ -71,7 +73,7 @@ public record CreateTestCaseRequest(
             Long serverEnvironmentId
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, serverEnvironmentId, null, null, null, null, null);
+                os, browser, device, areaTagIds, serverEnvironmentId, null, null, null, null, null, null);
     }
 
     public CreateTestCaseRequest(
@@ -81,6 +83,6 @@ public record CreateTestCaseRequest(
             Long serverEnvironmentId, Long testConfigurationId
     ) {
         this(type, priority, status, title, description, precondition, steps, notes,
-                os, browser, device, areaTagIds, serverEnvironmentId, testConfigurationId, null, null, null, null);
+                os, browser, device, areaTagIds, serverEnvironmentId, testConfigurationId, null, null, null, null, null);
     }
 }

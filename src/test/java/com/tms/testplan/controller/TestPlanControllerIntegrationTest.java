@@ -56,14 +56,15 @@ class TestPlanControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Release 1.0", "Regression plan", TestPlanStatus.ACTIVE,
-                                null, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),
+                                "Release 1.0", TestPlanStatus.IN_PROGRESS, null,
+                                LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30),
+                                null, null, null, null, null, null, null, null, null, null, null,
                                 null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-plans/\\d+")))
                 .andExpect(jsonPath("$.name").value("Release 1.0"))
-                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.suiteCount").value(0))
                 .andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();
@@ -108,8 +109,9 @@ class TestPlanControllerIntegrationTest {
         mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Invalid plan", null, TestPlanStatus.DRAFT,
-                                null, LocalDate.of(2026, 7, 1), LocalDate.of(2026, 6, 1),
+                                "Invalid plan", TestPlanStatus.DRAFT, null,
+                                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 6, 1),
+                                null, null, null, null, null, null, null, null, null, null, null,
                                 null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isBadRequest())
@@ -118,7 +120,9 @@ class TestPlanControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Valid plan", null, TestPlanStatus.DRAFT, null, null, null, null, null, null, null, null, null, null, null
+                                "Valid plan", TestPlanStatus.DRAFT, null, null, null,
+                                null, null, null, null, null, null, null, null, null, null, null,
+                                null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();
@@ -138,7 +142,9 @@ class TestPlanControllerIntegrationTest {
         MvcResult planResult = mockMvc.perform(post("/api/test-plans")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new TestPlanRequest(
-                                "Cleanup plan", null, TestPlanStatus.DRAFT, null, null, null, null, null, null, null, null, null, null, null
+                                "Cleanup plan", TestPlanStatus.DRAFT, null, null, null,
+                                null, null, null, null, null, null, null, null, null, null, null,
+                                null, null, null, null, null, null, null, null
                         ))))
                 .andExpect(status().isCreated()).andReturn();
         long planId = objectMapper.readTree(planResult.getResponse().getContentAsString()).get("id").asLong();

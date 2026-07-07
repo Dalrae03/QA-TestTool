@@ -124,7 +124,7 @@ class ExcelExportTypesIntegrationTest {
         TestFolder folder = testFolderRepository.save(new TestFolder("로그인", null, 7L));
         TestCase a = newCase("로그인 성공", TestCasePriority.HIGH, folder);
 
-        TestPlan plan = new TestPlan("릴리스 1.0", "설명", TestPlanStatus.ACTIVE, "리드",
+        TestPlan plan = new TestPlan("릴리스 1.0", TestPlanStatus.IN_PROGRESS, "리드",
                 LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30));
         plan.setProjectId(7L);
         plan = testPlanRepository.save(plan);
