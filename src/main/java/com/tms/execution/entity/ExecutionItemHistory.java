@@ -13,6 +13,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import org.hibernate.Length;
 
 /**
  * 테스트런 항목(ExecutionItem)에 결과를 기록할 때마다 남기는 "재시도 이력" 한 줄 —
@@ -36,9 +37,11 @@ public class ExecutionItemHistory {
     private ResultStatus status;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String comment;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String failureReason;
 
     @Column(nullable = false)

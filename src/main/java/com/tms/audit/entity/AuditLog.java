@@ -11,6 +11,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "audit_logs")
@@ -34,11 +35,11 @@ public class AuditLog {
     private String fieldName;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String oldValue;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String newValue;
 
     @Column(nullable = false, length = 500)

@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_executions")
@@ -34,6 +35,7 @@ public class Execution {
     private String version;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String description;
 
     @Column(name = "project_id")

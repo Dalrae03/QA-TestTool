@@ -18,6 +18,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_execution_items")
@@ -55,10 +56,12 @@ public class ExecutionItem {
     private ResultStatus status;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String comment;
 
     /** 실패 사유 — Jira 티켓 URL 등 (#9) */
     @Lob
+    @Column(length = Length.LONG32)
     private String failureReason;
 
     private LocalDateTime executedAt;

@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_plans")
@@ -53,9 +54,11 @@ public class TestPlan {
     // ── 2. 프로젝트 개요 ──────────────────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String testGoal;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String testTarget;
 
     // ── 3. 테스트 범위 ────────────────────────────────────────────────
@@ -70,56 +73,69 @@ public class TestPlan {
     private List<TestCase> coreTestCases = new ArrayList<>();
 
     @Lob
+    @Column(length = Length.LONG32)
     private String impactScope;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String commonScope;
 
     // ── 5. 테스트 우선순위 및 리스크 ──────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String priorityTargets;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String riskAnalysis;
 
     // ── 6. 테스트 전략 ────────────────────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String testApproach;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String testPerspective;
 
     // ── 7. 진입 조건, 종료 기준 ───────────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String entryCriteria;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String exitCriteria;
 
     // ── 9. 테스트 환경 ────────────────────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String serverEnvironmentNote;
 
     /** 9.2 테스트 디바이스 — [{platform, device}] 형태의 JSON 배열 문자열. 백엔드는 파싱하지 않고 그대로 저장/반환한다. */
     @Lob
+    @Column(length = Length.LONG32)
     private String deviceMatrix;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String testData;
 
     // ── 10. 테스트 일정 및 절차 (소분류 없음) ────────────────────────
 
     /** [{period, phase, task}] 형태의 JSON 배열 문자열. 백엔드는 파싱하지 않는다. */
     @Lob
+    @Column(length = Length.LONG32)
     private String schedule;
 
     // ── 11. 산출물 (소분류 없음) ──────────────────────────────────────
 
     @Lob
+    @Column(length = Length.LONG32)
     private String deliverables;
 
     @Column(name = "project_id")

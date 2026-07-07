@@ -12,6 +12,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "defects")
@@ -25,7 +26,7 @@ public class Defect {
     private String title;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String description;
 
     @Enumerated(EnumType.STRING)
