@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Set;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_suites")
@@ -38,6 +39,7 @@ public class TestSuite {
     private String name;
 
     @Lob
+    @Column(length = Length.LONG32)
     private String description;
 
     @ManyToMany

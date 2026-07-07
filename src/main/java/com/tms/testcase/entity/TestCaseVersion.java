@@ -11,6 +11,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.Length;
 
 @Entity
 @Table(name = "test_case_versions")
@@ -51,19 +52,19 @@ public class TestCaseVersion {
     private String version;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String description;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String precondition;
 
     @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, length = Length.LONG32)
     private String steps;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String notes;
 
     @Enumerated(EnumType.STRING)
@@ -100,11 +101,11 @@ public class TestCaseVersion {
     private String testConfigurationName;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String areaTagIds;
 
     @Lob
-    @Column
+    @Column(length = Length.LONG32)
     private String areaTagNames;
 
     @CreationTimestamp
