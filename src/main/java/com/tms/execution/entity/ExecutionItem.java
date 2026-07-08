@@ -44,6 +44,13 @@ public class ExecutionItem {
     @Column(length = 100)
     private String versionLabel;
 
+    // 이 항목이 생성될 당시 속해 있던 출처 스위트 스냅샷 — 여러 스위트를 병합해 만든 런에서
+    // 항목별로 원래 어느 스위트에서 왔는지 구분해 보여주기 위함 (FK 미사용, 스위트가 삭제돼도 보존).
+    private Long sourceSuiteId;
+
+    @Column(length = 200)
+    private String sourceSuiteName;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ResultStatus status;
@@ -71,11 +78,18 @@ public class ExecutionItem {
     }
 
     public ExecutionItem(Execution execution, Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel) {
+        this(execution, testCaseId, caseTitle, versionNumber, versionLabel, null, null);
+    }
+
+    public ExecutionItem(Execution execution, Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
+                          Long sourceSuiteId, String sourceSuiteName) {
         this.execution = execution;
         this.testCaseId = testCaseId;
         this.caseTitle = caseTitle;
         this.versionNumber = versionNumber;
         this.versionLabel = versionLabel;
+        this.sourceSuiteId = sourceSuiteId;
+        this.sourceSuiteName = sourceSuiteName;
         this.status = ResultStatus.UNTESTED;
     }
 
@@ -106,6 +120,8 @@ public class ExecutionItem {
     public String getCaseTitle() { return caseTitle; }
     public Integer getVersionNumber() { return versionNumber; }
     public String getVersionLabel() { return versionLabel; }
+    public Long getSourceSuiteId() { return sourceSuiteId; }
+    public String getSourceSuiteName() { return sourceSuiteName; }
     public ResultStatus getStatus() { return status; }
     public String getComment() { return comment; }
     public String getFailureReason() { return failureReason; }

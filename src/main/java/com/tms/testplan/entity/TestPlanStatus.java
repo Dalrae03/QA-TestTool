@@ -2,7 +2,10 @@ package com.tms.testplan.entity;
 
 public enum TestPlanStatus {
     DRAFT,
-    ACTIVE,
+    IN_REVIEW,
+    APPROVED,
+    IN_PROGRESS,
     COMPLETED,
-    ARCHIVED
+    ON_HOLD,
+    CANCELLED
 }

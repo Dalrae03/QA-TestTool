@@ -933,28 +933,41 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST") {
       const body = await readBody(req);
-      const suite = testSuites.find((s) => s.id === Number(body.suiteId));
-      if (!suite) { json(res, 404, { message: `TestSuite not found. id=${body.suiteId}` }); return; }
-      if (!suite.testCaseIds || suite.testCaseIds.length === 0) {
+      const suiteIds = [...new Set([
+        ...(body.suiteId != null ? [Number(body.suiteId)] : []),
+        ...(Array.isArray(body.suiteIds) ? body.suiteIds.map(Number) : [])
+      ])];
+      const suites = suiteIds.map((id) => testSuites.find((s) => s.id === id)).filter(Boolean);
+      if (suites.length !== suiteIds.length) {
+        const missing = suiteIds.filter((id) => !testSuites.some((s) => s.id === id));
+        json(res, 404, { message: `TestSuite not found. id=${missing.join(",")}` });
+        return;
+      }
+      const single = suites.length === 1;
+      const mergedTcIds = [...new Set(suites.flatMap((s) => s.testCaseIds || []))];
+      if (mergedTcIds.length === 0) {
         json(res, 400, { message: "테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다." });
         return;
       }
       const now = new Date().toISOString();
       const config = body.testConfigurationId ? testConfigurations.find((c) => c.id === Number(body.testConfigurationId)) : null;
+      const defaultName = single
+        ? `${suites[0].name} — ${now.slice(0, 10)}`
+        : `${suites.map((s) => s.name).join(", ")} — ${now.slice(0, 10)}`;
       const exec = {
         id: nextExecutionId++,
-        name: body.name && body.name.trim() ? body.name.trim() : `${suite.name} — ${now.slice(0, 10)}`,
+        name: body.name && body.name.trim() ? body.name.trim() : defaultName,
         version: body.version && body.version.trim() ? body.version.trim() : null,
         description: body.description ?? null,
-        testPlanId: suite.testPlanId,
-        testSuiteId: suite.id,
-        suiteName: suite.name,
+        testPlanId: single ? suites[0].testPlanId : null,
+        testSuiteId: single ? suites[0].id : null,
+        suiteName: single ? suites[0].name : suites.map((s) => s.name).join(", "),
         testConfigurationId: config ? config.id : null,
         configurationName: config ? config.name : null,
         environmentDetail: config ? configDetailString(config) : null,
         status: "IN_PROGRESS",
         assignee: body.assignee ?? null,
-        items: suite.testCaseIds.map((tcId) => {
+        items: mergedTcIds.map((tcId) => {
           const tc = testCases.find((c) => c.id === tcId);
           return { id: nextExecutionItemId++, testCaseId: tcId, caseTitle: tc ? tc.title : `TC-${tcId}`, status: "UNTESTED", comment: null, executedAt: null };
         }),

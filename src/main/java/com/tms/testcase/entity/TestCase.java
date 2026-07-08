@@ -66,7 +66,7 @@ public class TestCase {
 
     @Lob
     @Column(name = "expected", nullable = false, length = Length.LONG32)
-    private String legacyExpected;
+    private String expectedResult;
 
     @Lob
     @Column(length = Length.LONG32)
@@ -237,6 +237,29 @@ public class TestCase {
             String assignee,
             String version
     ) {
+        this(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, version, "");
+    }
+
+    public TestCase(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version,
+            String expectedResult
+    ) {
         this.type = type;
         this.priority = priority;
         this.status = (status != null) ? status : TestCaseStatus.DRAFT;
@@ -244,7 +267,7 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.legacyExpected = "";
+        this.expectedResult = expectedResult != null ? expectedResult : "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
@@ -356,6 +379,29 @@ public class TestCase {
             String assignee,
             String version
     ) {
+        update(type, priority, status, title, description, precondition, steps, notes,
+                os, browser, device, areaTags, serverEnvironment, testConfiguration, assignee, version, this.expectedResult);
+    }
+
+    public void update(
+            TestCaseType type,
+            TestCasePriority priority,
+            TestCaseStatus status,
+            String title,
+            String description,
+            String precondition,
+            String steps,
+            String notes,
+            TestCaseOs os,
+            TestCaseBrowser browser,
+            TestCaseDevice device,
+            List<AreaTag> areaTags,
+            ServerEnvironment serverEnvironment,
+            TestConfiguration testConfiguration,
+            String assignee,
+            String version,
+            String expectedResult
+    ) {
         this.type = type;
         this.priority = priority;
         this.status = status;
@@ -363,7 +409,7 @@ public class TestCase {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
-        this.legacyExpected = "";
+        this.expectedResult = expectedResult != null ? expectedResult : "";
         this.notes = notes;
         this.os = os;
         this.browser = browser;
@@ -485,6 +531,14 @@ public class TestCase {
 
     public void setSteps(String steps) {
         this.steps = steps;
+    }
+
+    public String getExpectedResult() {
+        return expectedResult;
+    }
+
+    public void setExpectedResult(String expectedResult) {
+        this.expectedResult = expectedResult;
     }
 
     public String getNotes() {

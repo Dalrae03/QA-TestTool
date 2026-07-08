@@ -68,9 +68,9 @@ class AuditLoggingIntegrationTest {
                 TestCaseStatus.READY, "로그인", "설명", "사전", "스텝", "비고",
                 null, null, null, new ArrayList<>(), null, null, "tester", "v1"));
 
-        // CreateExecutionRequest(suiteId, testCaseIds, testPlanId, projectId, testConfigurationId, name, description, assignee)
+        // CreateExecutionRequest(suiteId, suiteIds, testCaseIds, testPlanId, projectId, testConfigurationId, name, description, assignee, version)
         CreateExecutionRequest createReq = new CreateExecutionRequest(
-                null, List.of(tc.getId()), null, 7L, null, "회귀런", null, null, null);
+                null, null, List.of(tc.getId()), null, 7L, null, "회귀런", null, null, null);
         ExecutionResponse run = executionService.createExecution(createReq);
         assertThat(logs(AuditLogService_TEST_RUN, AuditAction.CREATED)).isNotEmpty();
 

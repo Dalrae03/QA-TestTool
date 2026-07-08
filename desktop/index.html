@@ -240,6 +240,9 @@
             <select id="filterAreaTag" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
               <option value="">태그 전체</option>
             </select>
+            <select id="filterVersion" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">버전 전체</option>
+            </select>
           </div>
         </div>
       </div>
@@ -259,9 +262,9 @@
           <div class="tc-list-scroll">
             <div id="listState" class="list-state-msg" style="display:none"></div>
             <table class="ctbl">
-              <colgroup><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:90px"></colgroup>
+              <colgroup><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:80px"><col style="width:90px"></colgroup>
               <thead>
-                <tr><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>수정일</th></tr>
+                <tr><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>버전</th><th>수정일</th></tr>
               </thead>
               <tbody id="testCaseList"></tbody>
             </table>
@@ -382,6 +385,11 @@
                     <button id="addStepButton" type="button" class="btn btn-sm step-add-btn">＋ 단계 추가</button>
                   </div>
                 </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>예상 결과</span>
+                  <textarea id="expectedResult" placeholder="테스트 수행 후 기대되는 결과를 적습니다." class="form-input"></textarea>
+                </label>
 
                 <label class="form-field" style="margin-bottom:14px">
                   <span>Notes</span>
@@ -609,23 +617,96 @@
       <form id="planForm" class="plan-form" hidden>
         <input id="planId" type="hidden">
         <div class="plan-editor-title" id="planFormTitle">새 테스트 플랜</div>
-        <label class="form-field"><span>플랜 이름 *</span><input id="planName" class="form-input" maxlength="200" required></label>
-        <label class="form-field"><span>상태 *</span><select id="planStatus" class="form-input"><option>DRAFT</option><option>ACTIVE</option><option>COMPLETED</option><option>ARCHIVED</option></select></label>
-        <div class="editor-row2">
-          <label class="form-field"><span>시작일</span><input id="planStartDate" type="date" class="form-input"></label>
-          <label class="form-field"><span>종료일</span><input id="planEndDate" type="date" class="form-input"></label>
+
+        <div class="plan-section">
+          <div class="plan-section-title">기본 정보</div>
+          <label class="form-field"><span>플랜 이름 *</span><input id="planName" class="form-input" maxlength="200" required></label>
+          <div class="editor-row2">
+            <label class="form-field"><span>상태 *</span><select id="planStatus" class="form-input">
+              <option value="DRAFT">작성중</option>
+              <option value="IN_REVIEW">검토중</option>
+              <option value="APPROVED">승인완료</option>
+              <option value="IN_PROGRESS">테스트 진행중</option>
+              <option value="COMPLETED">완료</option>
+              <option value="ON_HOLD">보류</option>
+              <option value="CANCELLED">취소</option>
+            </select></label>
+            <label class="form-field"><span>담당자</span><input id="planAssignee" class="form-input" maxlength="100" placeholder="담당자 이름"></label>
+          </div>
+          <div class="editor-row2">
+            <label class="form-field"><span>대상 시스템</span><input id="planTargetSystem" class="form-input" maxlength="200" placeholder="예) 웹, iOS 앱"></label>
+            <label class="form-field"><span>대상 버전 또는 릴리즈</span><input id="planTargetVersion" class="form-input" maxlength="200" placeholder="예) v1.2.0"></label>
+          </div>
+          <div class="editor-row2">
+            <label class="form-field"><span>테스트 기간 - 시작일</span><input id="planStartDate" type="date" class="form-input"></label>
+            <label class="form-field"><span>테스트 기간 - 종료일</span><input id="planEndDate" type="date" class="form-input"></label>
+          </div>
         </div>
-        <label class="form-field"><span>설명</span><textarea id="planDescription" class="form-input"></textarea></label>
-        <!-- 확장 필드 -->
-        <div class="plan-ext-grid">
-          <label class="form-field"><span>리스크 항목</span><textarea id="planRiskItems" class="form-input" rows="2" placeholder="주요 리스크를 줄바꿈으로 구분"></textarea></label>
-          <label class="form-field"><span>테스트 범위 (Scope)</span><textarea id="planScope" class="form-input" rows="2" placeholder="포함/제외 범위"></textarea></label>
-          <label class="form-field"><span>팀 규모</span><input id="planTeamSize" type="number" class="form-input" min="1" placeholder="0"></label>
-          <label class="form-field"><span>팀원</span><input id="planTeamMembers" class="form-input" placeholder="홍길동, 김철수"></label>
-          <label class="form-field"><span>품질 기준</span><textarea id="planQualityCriteria" class="form-input" rows="2" placeholder="출시 조건 또는 통과 기준"></textarea></label>
-          <label class="form-field"><span>예산</span><input id="planBudget" class="form-input" placeholder="예: 800만원 / 2주"></label>
-          <label class="form-field" style="grid-column:1/-1"><span>기타 메모</span><textarea id="planNotes" class="form-input" rows="2"></textarea></label>
+
+        <div class="plan-section">
+          <div class="plan-section-title">프로젝트 개요</div>
+          <label class="form-field"><span>테스트 목표</span><textarea id="planTestGoal" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>테스트 대상</span><textarea id="planTestTarget" class="form-input" rows="2"></textarea></label>
         </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 범위</div>
+          <div class="form-field">
+            <span>핵심 테스트 대상</span>
+            <div class="plan-tc-summary">
+              <span id="planCoreCaseSummary">선택된 테스트케이스 없음</span>
+              <button type="button" class="btn btn-sm" onclick="openPlanTcPickerModal()">테스트케이스 선택</button>
+            </div>
+          </div>
+          <label class="form-field"><span>영향 범위 (포함 테스트 대상)</span><textarea id="planImpactScope" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>공통 검증 범위</span><textarea id="planCommonScope" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 우선순위 및 리스크</div>
+          <div class="form-field">
+            <span>우선순위별 테스트 대상</span>
+            <div id="planPriorityTargets"></div>
+          </div>
+          <div class="form-field">
+            <span>리스크 분석 및 대응</span>
+            <label class="form-field"><span>주요 리스크</span><textarea id="planRiskMain" class="form-input" rows="2"></textarea></label>
+            <label class="form-field"><span>대응 방향</span><textarea id="planRiskResponse" class="form-input" rows="2"></textarea></label>
+          </div>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 전략</div>
+          <label class="form-field"><span>테스트 접근 방식</span><textarea id="planTestApproach" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>테스트 관점</span><textarea id="planTestPerspective" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">진입 조건, 종료 기준</div>
+          <label class="form-field"><span>진입 조건</span><textarea id="planEntryCriteria" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>종료 기준</span><textarea id="planExitCriteria" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 환경</div>
+          <label class="form-field"><span>서버환경</span><textarea id="planServerEnvironment" class="form-input" rows="2"></textarea></label>
+          <div class="form-field">
+            <span>테스트 디바이스</span>
+            <div id="planDeviceMatrix"></div>
+          </div>
+          <label class="form-field"><span>테스트 데이터</span><textarea id="planTestData" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 일정 및 절차</div>
+          <div id="planSchedule"></div>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">산출물</div>
+          <textarea id="planDeliverables" class="form-input" rows="2"></textarea>
+        </div>
+
         <div class="plan-form-actions"><button type="button" class="btn btn-sm btn-danger" id="deletePlanButton">삭제</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
       </form>
 
@@ -650,7 +731,7 @@
     </div>
   </div>
   <div class="run-workspace">
-    <section class="run-list-column">
+    <section class="run-list-column" id="runListColumn">
       <div class="plan-column-title"><span>테스트런</span><span id="runCount" class="badge b-tag">0</span></div>
       <div class="run-filter-bar">
         <label class="run-filter-label" for="runAssigneeFilter">담당자</label>
@@ -661,6 +742,7 @@
       <div id="runEmpty" class="plan-empty">아직 테스트런이 없습니다. ‘새 테스트런’으로 시작하세요.</div>
       <div id="runList" class="run-cycle-list"></div>
     </section>
+    <div class="sidebar-resize-handle" id="runListResizeHandle"></div>
     <section class="run-detail-column">
       <div id="runDetailEmpty" class="plan-empty">테스트런을 선택하거나 새로 만드세요.</div>
       <div id="runDetail" class="run-detail" hidden>
@@ -713,7 +795,10 @@
       <button type="button" class="run-source-tab active" id="runSourceTabSuite" data-mode="suite">스위트에서 만들기</button>
       <button type="button" class="run-source-tab" id="runSourceTabCases" data-mode="cases">테스트케이스 직접 선택</button>
     </div>
-    <label class="form-field" id="runSuiteField"><span>스위트 *</span><select id="runSuiteSelect" class="form-input"><option value="">스위트를 선택하세요</option></select></label>
+    <div class="form-field" id="runSuiteField">
+      <span>스위트 * (여러 개 선택 가능 — 선택한 스위트의 테스트케이스는 병합되어 테스트런 1개로 생성됩니다)</span>
+      <div id="runSuiteCheckList" class="tc-picker-tree" style="max-height:220px"></div>
+    </div>
     <div class="form-field" id="runCasesField" hidden>
       <span>테스트케이스 선택</span>
       <div class="tc-picker-filter">
@@ -847,10 +932,10 @@
 </main>
 </div>
 
-<!-- ══ 프로젝트 생성 모달 (#14) ══ -->
+<!-- ══ 프로젝트 생성/수정 모달 (#14) ══ -->
 <div id="createProjectModal" class="modal-overlay" hidden>
   <div class="modal-card" style="width:440px">
-    <div class="modal-hd"><span>새 프로젝트 만들기</span><button class="modal-close" onclick="closeCreateProjectModal()">✕</button></div>
+    <div class="modal-hd"><span id="createProjectModalTitle">새 프로젝트 만들기</span><button class="modal-close" onclick="closeCreateProjectModal()">✕</button></div>
     <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
       <label class="form-field"><span>프로젝트 이름 *</span><input id="newProjectName" class="form-input" maxlength="200" placeholder="My Project" required></label>
       <label class="form-field"><span>설명</span><textarea id="newProjectDesc" class="form-input" rows="3" placeholder="프로젝트 설명을 입력하세요"></textarea></label>
@@ -858,7 +943,7 @@
     </div>
     <div class="modal-footer" style="justify-content:flex-end;gap:8px">
       <button class="btn btn-sm" onclick="closeCreateProjectModal()">취소</button>
-      <button class="btn btn-sm btn-pri" onclick="createProject()">생성</button>
+      <button class="btn btn-sm btn-pri" id="createProjectSubmitButton" onclick="submitProjectModal()">생성</button>
     </div>
   </div>
 </div>
@@ -976,6 +1061,28 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 테스트 플랜 - 핵심 테스트 대상 TC 피커 모달 ══ -->
+<div id="planTcPickerModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:520px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-head">
+      <div class="modal-title">🧩 핵심 테스트 대상 선택</div>
+      <button class="modal-close" onclick="closePlanTcPickerModal()">×</button>
+    </div>
+    <div class="form-field" style="overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:0">
+      <div class="tc-picker-filter">
+        <input id="planTcPickerSearch" class="form-input" placeholder="🔍 제목 검색..." oninput="filterPlanTcPicker()">
+        <select id="planTcPickerPriority" class="form-input" onchange="filterPlanTcPicker()"><option value="">우선순위 전체</option><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select>
+        <select id="planTcPickerStatus" class="form-input" onchange="filterPlanTcPicker()"><option value="">상태 전체</option><option value="DRAFT">Draft</option><option value="READY">Ready</option><option value="COMPLETED">Completed</option></select>
+      </div>
+      <div id="planTcPickerTree" class="tc-picker-tree"></div>
+      <div class="tc-picker-selected-bar">선택된 TC: <strong id="planTcPickerCount">0</strong>건</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+      <button type="button" class="btn btn-sm btn-pri" onclick="closePlanTcPickerModal()">확인</button>
     </div>
   </div>
 </div>

@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,12 +93,23 @@ public class ExecutionService {
 
     /** 런 생성 시점 기준 테스트케이스의 최신 버전 스냅샷 — 없으면(버전 이력이 없는 구버전 케이스) null. */
     private void addItemWithCurrentVersion(Execution execution, TestCase testCase) {
+        addItemWithCurrentVersion(execution, testCase, null);
+    }
+
+    /** 출처 스위트를 함께 기록하는 버전 — 여러 스위트를 병합한 런에서 항목별로 원래 스위트를 구분하기 위함. */
+    private void addItemWithCurrentVersion(Execution execution, TestCase testCase, TestSuite sourceSuite) {
+        addItemWithCurrentVersion(execution, testCase,
+                sourceSuite != null ? sourceSuite.getId() : null,
+                sourceSuite != null ? sourceSuite.getName() : null);
+    }
+
+    private void addItemWithCurrentVersion(Execution execution, TestCase testCase, Long sourceSuiteId, String sourceSuiteName) {
         TestCaseVersion latest = testCaseVersionRepository
                 .findTopByTestCaseIdOrderByVersionNumberDesc(testCase.getId())
                 .orElse(null);
         Integer versionNumber = latest != null ? latest.getVersionNumber() : null;
         String versionLabel = latest != null ? latest.getLabel() : null;
-        execution.addItem(testCase.getId(), testCase.getTitle(), versionNumber, versionLabel);
+        execution.addItem(testCase.getId(), testCase.getTitle(), versionNumber, versionLabel, sourceSuiteId, sourceSuiteName);
     }
 
     public List<ExecutionResponse> getExecutions(Long projectId, String assignee) {
@@ -121,40 +133,73 @@ public class ExecutionService {
 
     @Transactional
     public ExecutionResponse createExecution(CreateExecutionRequest request) {
-        if (request.suiteId() != null) {
-            return createFromSuite(request);
+        List<Long> suiteIds = new LinkedHashSet<>(
+                Stream.concat(
+                        Stream.ofNullable(request.suiteId()),
+                        request.suiteIds() == null ? Stream.<Long>empty() : request.suiteIds().stream()
+                ).filter(java.util.Objects::nonNull).toList()
+        ).stream().toList();
+        if (!suiteIds.isEmpty()) {
+            return createFromSuites(suiteIds, request);
         }
         return createFromTestCases(request);
     }
 
-    private ExecutionResponse createFromSuite(CreateExecutionRequest request) {
-        TestSuite suite = testSuiteRepository.findById(request.suiteId())
-                .orElseThrow(() -> new EntityNotFoundException("TestSuite not found. id=" + request.suiteId()));
-        if (suite.getTestCases().isEmpty()) {
+    /** 스위트 1개 이상을 선택해 테스트런을 생성 — 여러 개를 선택하면 테스트케이스를 병합(중복 제거)한 테스트런 1개를 만든다. */
+    private ExecutionResponse createFromSuites(List<Long> suiteIds, CreateExecutionRequest request) {
+        List<TestSuite> suites = testSuiteRepository.findAllById(suiteIds);
+        List<Long> foundIds = suites.stream().map(TestSuite::getId).toList();
+        List<Long> missingIds = suiteIds.stream().filter(id -> !foundIds.contains(id)).toList();
+        if (!missingIds.isEmpty()) {
+            throw new EntityNotFoundException("TestSuite not found. id=" + missingIds);
+        }
+        List<Long> mismatched = suites.stream()
+                .filter(s -> !ProjectScope.compatible(request.projectId(), s.getProjectId()))
+                .map(TestSuite::getId).toList();
+        if (!mismatched.isEmpty()) {
+            throw new InvalidRequestException("다른 프로젝트의 스위트로는 테스트런을 만들 수 없습니다: " + mismatched);
+        }
+
+        // 같은 케이스가 여러 스위트에 걸쳐 있으면 처음 발견된 스위트를 "출처"로 기록한다.
+        Map<Long, TestCase> mergedCasesById = new java.util.LinkedHashMap<>();
+        Map<Long, TestSuite> sourceSuiteByCaseId = new java.util.LinkedHashMap<>();
+        suites.forEach(s -> s.getTestCases().forEach(tc -> {
+            mergedCasesById.putIfAbsent(tc.getId(), tc);
+            sourceSuiteByCaseId.putIfAbsent(tc.getId(), s);
+        }));
+        if (mergedCasesById.isEmpty()) {
             throw new InvalidRequestException("테스트케이스가 없는 스위트로는 테스트런을 만들 수 없습니다.");
         }
 
-        String name = request.name() != null && !request.name().isBlank()
-                ? request.name().trim()
-                : suite.getName() + " — " + LocalDate.now();
+        boolean single = suites.size() == 1;
+        TestSuite first = suites.get(0);
+        String defaultName = single
+                ? first.getName() + " — " + LocalDate.now()
+                : suites.stream().map(TestSuite::getName).collect(Collectors.joining(", ")) + " — " + LocalDate.now();
+        String name = request.name() != null && !request.name().isBlank() ? request.name().trim() : defaultName;
 
-        // B안: testPlan이 null일 수 있음
-        Long planId = suite.getTestPlan() != null ? suite.getTestPlan().getId() : null;
-        String planName = suite.getTestPlan() != null ? suite.getTestPlan().getName() : null;
+        // B안: testPlan이 null일 수 있음. 여러 스위트가 서로 다른 플랜에 속하면 플랜을 지정하지 않는다.
+        Long planId = null;
+        String planName = null;
+        if (single && first.getTestPlan() != null) {
+            planId = first.getTestPlan().getId();
+            planName = first.getTestPlan().getName();
+        }
 
         Execution execution = new Execution(
                 name,
                 normalizeOptional(request.description()),
-                suite.getProjectId(),
+                single ? first.getProjectId() : request.projectId(),
                 planId,
                 planName,
-                suite.getId(),
-                suite.getName(),
+                single ? first.getId() : null,
+                single ? first.getName() : suites.stream().map(TestSuite::getName).collect(Collectors.joining(", ")),
                 normalizeOptional(request.assignee()),
                 normalizeOptional(request.version())
         );
         applyConfiguration(execution, request.testConfigurationId());
-        suite.getTestCases().forEach(testCase -> addItemWithCurrentVersion(execution, testCase));
+        mergedCasesById.values().forEach(testCase ->
+                addItemWithCurrentVersion(execution, testCase, sourceSuiteByCaseId.get(testCase.getId())));
         return saveAndLog(execution);
     }
 
@@ -264,7 +309,7 @@ public class ExecutionService {
         for (ExecutionItem item : source.getItems()) {
             TestCase testCase = casesById.get(item.getTestCaseId());
             if (testCase != null) {
-                addItemWithCurrentVersion(clone, testCase);
+                addItemWithCurrentVersion(clone, testCase, item.getSourceSuiteId(), item.getSourceSuiteName());
             }
         }
         return saveAndLog(clone);

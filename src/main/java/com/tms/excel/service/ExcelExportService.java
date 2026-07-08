@@ -44,7 +44,7 @@ public class ExcelExportService {
 
     /** 출력 헤더(한글) — ExcelImportService.COLUMN_ALIASES 와 호환된다. */
     private static final String[] HEADERS = {
-            "제목", "설명", "전제조건", "스텝", "메모",
+            "제목", "설명", "전제조건", "스텝", "예상결과", "메모",
             "우선순위", "상태", "유형", "OS", "브라우저", "디바이스", "담당자", "버전"
     };
 
@@ -128,7 +128,7 @@ public class ExcelExportService {
         }
 
         String[] headers = {"ID", "제목", "폴더", "우선순위", "상태", "유형",
-                "OS", "브라우저", "디바이스", "담당자", "버전", "영역태그", "설명", "전제조건", "스텝", "메모"};
+                "OS", "브라우저", "디바이스", "담당자", "버전", "영역태그", "설명", "전제조건", "스텝", "예상결과", "메모"};
         List<List<String>> rows = new ArrayList<>();
         for (TestCase tc : cases) {
             rows.add(List.of(
@@ -147,6 +147,7 @@ public class ExcelExportService {
                     nz(tc.getDescription()),
                     nz(tc.getPrecondition()),
                     nz(tc.getSteps()),
+                    nz(tc.getExpectedResult()),
                     nz(tc.getNotes())
             ));
         }
@@ -571,6 +572,7 @@ public class ExcelExportService {
             row.createCell(c++).setCellValue(nz(tc.getDescription()));
             row.createCell(c++).setCellValue(nz(tc.getPrecondition()));
             row.createCell(c++).setCellValue(nz(tc.getSteps()));
+            row.createCell(c++).setCellValue(nz(tc.getExpectedResult()));
             row.createCell(c++).setCellValue(nz(tc.getNotes()));
             row.createCell(c++).setCellValue(enumName(tc.getPriority()));
             row.createCell(c++).setCellValue(enumName(tc.getStatus()));

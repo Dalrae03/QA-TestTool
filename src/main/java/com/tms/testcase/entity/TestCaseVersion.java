@@ -65,6 +65,10 @@ public class TestCaseVersion {
 
     @Lob
     @Column(length = Length.LONG32)
+    private String expectedResult;
+
+    @Lob
+    @Column(length = Length.LONG32)
     private String notes;
 
     @Enumerated(EnumType.STRING)
@@ -140,7 +144,8 @@ public class TestCaseVersion {
             Long testConfigurationId,
             String testConfigurationName,
             String areaTagIds,
-            String areaTagNames
+            String areaTagNames,
+            String expectedResult
     ) {
         this.testCaseId = testCaseId;
         this.versionNumber = versionNumber;
@@ -154,6 +159,7 @@ public class TestCaseVersion {
         this.description = description;
         this.precondition = precondition;
         this.steps = steps;
+        this.expectedResult = expectedResult;
         this.notes = notes;
         this.os = os;
         this.browser = browser;
@@ -182,6 +188,7 @@ public class TestCaseVersion {
     public String getDescription() { return description; }
     public String getPrecondition() { return precondition; }
     public String getSteps() { return steps; }
+    public String getExpectedResult() { return expectedResult; }
     public String getNotes() { return notes; }
     public TestCaseOs getOs() { return os; }
     public TestCaseBrowser getBrowser() { return browser; }

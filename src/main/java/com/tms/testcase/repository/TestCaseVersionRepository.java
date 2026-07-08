@@ -10,6 +10,9 @@ public interface TestCaseVersionRepository extends JpaRepository<TestCaseVersion
 
     List<TestCaseVersion> findByTestCaseIdOrderByVersionNumberDesc(Long testCaseId);
 
+    /** 목록 화면에서 케이스별 최신 버전 라벨을 한 번에 조회하기 위한 벌크 조회 (N+1 방지). */
+    List<TestCaseVersion> findAllByTestCaseIdIn(List<Long> testCaseIds);
+
     Optional<TestCaseVersion> findTopByTestCaseIdOrderByVersionNumberDesc(Long testCaseId);
 
     Optional<TestCaseVersion> findByIdAndTestCaseId(Long id, Long testCaseId);

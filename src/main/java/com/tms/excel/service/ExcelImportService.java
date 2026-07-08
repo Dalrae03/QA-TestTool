@@ -42,6 +42,8 @@ public class ExcelImportService {
         put("precondition", "precondition"); put("전제조건", "precondition"); put("사전조건", "precondition"); put("전제 조건", "precondition");
         // 스텝
         put("steps", "steps"); put("스텝", "steps"); put("단계", "steps"); put("테스트단계", "steps"); put("테스트 단계", "steps"); put("step", "steps");
+        // 예상결과
+        put("expectedresult", "expectedResult"); put("예상결과", "expectedResult"); put("예상 결과", "expectedResult"); put("expected", "expectedResult");
         // 메모
         put("notes", "notes"); put("메모", "notes"); put("비고", "notes"); put("note", "notes"); put("노트", "notes");
         // 우선순위
@@ -282,6 +284,7 @@ public class ExcelImportService {
         String description = values.getOrDefault("description", "엑셀에서 가져온 테스트케이스");
         String precondition = values.getOrDefault("precondition", "-");
         String steps = values.getOrDefault("steps", "-");
+        String expectedResult = values.get("expectedResult");
         String notes = values.get("notes");
 
         TestCasePriority priority = parseEnum(TestCasePriority.class, values.get("priority"), TestCasePriority.MEDIUM);
@@ -299,7 +302,8 @@ public class ExcelImportService {
                 new ArrayList<>(),
                 null, null,
                 values.get("assignee"),
-                values.get("version"));
+                values.get("version"),
+                expectedResult);
         tc.moveToFolder(folder);
         return tc;
     }

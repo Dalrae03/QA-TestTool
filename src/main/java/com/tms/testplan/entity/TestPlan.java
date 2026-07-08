@@ -1,5 +1,6 @@
 package com.tms.testplan.entity;
 
+import com.tms.testcase.entity.TestCase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -7,10 +8,16 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
 import jakarta.persistence.Lob;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.Length;
@@ -26,10 +33,6 @@ public class TestPlan {
     @Column(nullable = false, length = 200)
     private String name;
 
-    @Lob
-    @Column(length = Length.LONG32)
-    private String description;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TestPlanStatus status;
@@ -40,39 +43,100 @@ public class TestPlan {
     private LocalDate startDate;
     private LocalDate endDate;
 
-    // ── #5 테스트 플랜 확장 필드 ──────────────────────────────────────
+    // ── 1. 기본 정보 ──────────────────────────────────────────────────
 
-    /** 위험 요소 / 리스크 목록 (줄바꿈 구분) */
-    @Lob
-    @Column(length = Length.LONG32)
-    private String riskItems;
-
-    /** 테스트 범위 / 스코프 */
-    @Lob
-    @Column(length = Length.LONG32)
-    private String scope;
-
-    /** 투입 인력 수 */
-    private Integer teamSize;
-
-    /** 투입 인원 목록 (줄바꿈 구분) */
-    @Lob
-    @Column(length = Length.LONG32)
-    private String teamMembers;
-
-    /** 목표 품질 기준 */
-    @Lob
-    @Column(length = Length.LONG32)
-    private String qualityCriteria;
-
-    /** 예산 */
     @Column(length = 200)
-    private String budget;
+    private String targetSystem;
 
-    /** 기타 메모 */
+    @Column(length = 200)
+    private String targetVersion;
+
+    // ── 2. 프로젝트 개요 ──────────────────────────────────────────────
+
     @Lob
     @Column(length = Length.LONG32)
-    private String planNotes;
+    private String testGoal;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String testTarget;
+
+    // ── 3. 테스트 범위 ────────────────────────────────────────────────
+
+    /** 3.1 핵심 테스트 대상 — TestSuite와는 별개로 플랜에 직접 연결하는 테스트케이스 목록 */
+    @ManyToMany
+    @JoinTable(
+            name = "test_plan_core_cases",
+            joinColumns = @JoinColumn(name = "test_plan_id"),
+            inverseJoinColumns = @JoinColumn(name = "test_case_id")
+    )
+    private List<TestCase> coreTestCases = new ArrayList<>();
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String impactScope;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String commonScope;
+
+    // ── 5. 테스트 우선순위 및 리스크 ──────────────────────────────────
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String priorityTargets;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String riskAnalysis;
+
+    // ── 6. 테스트 전략 ────────────────────────────────────────────────
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String testApproach;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String testPerspective;
+
+    // ── 7. 진입 조건, 종료 기준 ───────────────────────────────────────
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String entryCriteria;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String exitCriteria;
+
+    // ── 9. 테스트 환경 ────────────────────────────────────────────────
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String serverEnvironmentNote;
+
+    /** 9.2 테스트 디바이스 — [{platform, device}] 형태의 JSON 배열 문자열. 백엔드는 파싱하지 않고 그대로 저장/반환한다. */
+    @Lob
+    @Column(length = Length.LONG32)
+    private String deviceMatrix;
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String testData;
+
+    // ── 10. 테스트 일정 및 절차 (소분류 없음) ────────────────────────
+
+    /** [{period, phase, task}] 형태의 JSON 배열 문자열. 백엔드는 파싱하지 않는다. */
+    @Lob
+    @Column(length = Length.LONG32)
+    private String schedule;
+
+    // ── 11. 산출물 (소분류 없음) ──────────────────────────────────────
+
+    @Lob
+    @Column(length = Length.LONG32)
+    private String deliverables;
 
     @Column(name = "project_id")
     private Long projectId;
@@ -86,63 +150,86 @@ public class TestPlan {
 
     protected TestPlan() {}
 
-    public TestPlan(String name, String description, TestPlanStatus status, LocalDate startDate, LocalDate endDate) {
-        this(name, description, status, null, startDate, endDate);
-    }
-
-    public TestPlan(String name, String description, TestPlanStatus status, String assignee, LocalDate startDate, LocalDate endDate) {
+    public TestPlan(String name, TestPlanStatus status, String assignee, LocalDate startDate, LocalDate endDate) {
         this.name = name;
-        this.description = description;
         this.status = status != null ? status : TestPlanStatus.DRAFT;
         this.assignee = assignee;
         this.startDate = startDate;
         this.endDate = endDate;
     }
 
-    public void update(String name, String description, TestPlanStatus status, String assignee,
-                       LocalDate startDate, LocalDate endDate,
-                       String riskItems, String scope, Integer teamSize, String teamMembers,
-                       String qualityCriteria, String budget, String planNotes) {
+    public void update(
+            String name, TestPlanStatus status, String assignee, LocalDate startDate, LocalDate endDate,
+            String targetSystem, String targetVersion,
+            String testGoal, String testTarget,
+            String impactScope, String commonScope,
+            String priorityTargets, String riskAnalysis,
+            String testApproach, String testPerspective,
+            String entryCriteria, String exitCriteria,
+            String serverEnvironmentNote, String deviceMatrix, String testData,
+            String schedule, String deliverables
+    ) {
         this.name = name;
-        this.description = description;
         this.status = status;
         this.assignee = assignee;
         this.startDate = startDate;
         this.endDate = endDate;
-        this.riskItems = riskItems;
-        this.scope = scope;
-        this.teamSize = teamSize;
-        this.teamMembers = teamMembers;
-        this.qualityCriteria = qualityCriteria;
-        this.budget = budget;
-        this.planNotes = planNotes;
+        this.targetSystem = targetSystem;
+        this.targetVersion = targetVersion;
+        this.testGoal = testGoal;
+        this.testTarget = testTarget;
+        this.impactScope = impactScope;
+        this.commonScope = commonScope;
+        this.priorityTargets = priorityTargets;
+        this.riskAnalysis = riskAnalysis;
+        this.testApproach = testApproach;
+        this.testPerspective = testPerspective;
+        this.entryCriteria = entryCriteria;
+        this.exitCriteria = exitCriteria;
+        this.serverEnvironmentNote = serverEnvironmentNote;
+        this.deviceMatrix = deviceMatrix;
+        this.testData = testData;
+        this.schedule = schedule;
+        this.deliverables = deliverables;
     }
 
-    /** 하위 호환 — 확장 필드 없이 기본 업데이트 */
-    public void update(String name, String description, TestPlanStatus status, String assignee,
-                       LocalDate startDate, LocalDate endDate) {
-        this.name = name;
-        this.description = description;
-        this.status = status;
-        this.assignee = assignee;
-        this.startDate = startDate;
-        this.endDate = endDate;
+    /** 3.1 핵심 테스트 대상 갱신 — delta 방식(Hibernate INSERT-before-DELETE 회피), TestSuite.replaceTestCases와 동일 패턴. */
+    public void replaceCoreTestCases(List<TestCase> newTestCases) {
+        List<TestCase> newList = newTestCases != null ? newTestCases : List.of();
+        Set<Long> newIds = newList.stream().map(TestCase::getId).collect(java.util.stream.Collectors.toSet());
+        this.coreTestCases.removeIf(tc -> !newIds.contains(tc.getId()));
+        Set<Long> existingIds = this.coreTestCases.stream().map(TestCase::getId).collect(java.util.stream.Collectors.toSet());
+        for (TestCase tc : newList) {
+            if (!existingIds.contains(tc.getId())) {
+                this.coreTestCases.add(tc);
+            }
+        }
     }
 
     public Long getId() { return id; }
     public String getName() { return name; }
-    public String getDescription() { return description; }
     public TestPlanStatus getStatus() { return status; }
     public String getAssignee() { return assignee; }
     public LocalDate getStartDate() { return startDate; }
     public LocalDate getEndDate() { return endDate; }
-    public String getRiskItems() { return riskItems; }
-    public String getScope() { return scope; }
-    public Integer getTeamSize() { return teamSize; }
-    public String getTeamMembers() { return teamMembers; }
-    public String getQualityCriteria() { return qualityCriteria; }
-    public String getBudget() { return budget; }
-    public String getPlanNotes() { return planNotes; }
+    public String getTargetSystem() { return targetSystem; }
+    public String getTargetVersion() { return targetVersion; }
+    public String getTestGoal() { return testGoal; }
+    public String getTestTarget() { return testTarget; }
+    public List<TestCase> getCoreTestCases() { return coreTestCases; }
+    public String getImpactScope() { return impactScope; }
+    public String getCommonScope() { return commonScope; }
+    public String getPriorityTargets() { return priorityTargets; }
+    public String getRiskAnalysis() { return riskAnalysis; }
+    public String getTestApproach() { return testApproach; }
+    public String getTestPerspective() { return testPerspective; }
+    public String getEntryCriteria() { return entryCriteria; }
+    public String getExitCriteria() { return exitCriteria; }
+    public String getServerEnvironmentNote() { return serverEnvironmentNote; }
+    public String getDeviceMatrix() { return deviceMatrix; }
+    public String getTestData() { return testData; }
+    public String getSchedule() { return schedule; }
+    public String getDeliverables() { return deliverables; }
     public Long getProjectId() { return projectId; }
     public void setProjectId(Long projectId) { this.projectId = projectId; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -98,17 +98,17 @@ class ExcelExportControllerIntegrationTest {
 
             Sheet login = wb.getSheet("로그인");
             assertThat(cell(login, 0, 0)).isEqualTo("제목");
-            assertThat(cell(login, 0, 5)).isEqualTo("우선순위");
+            assertThat(cell(login, 0, 6)).isEqualTo("우선순위");
             assertThat(cell(login, 1, 0)).isEqualTo("로그인 성공");
-            assertThat(cell(login, 1, 5)).isEqualTo("HIGH");
-            assertThat(cell(login, 1, 6)).isEqualTo("READY");
+            assertThat(cell(login, 1, 6)).isEqualTo("HIGH");
+            assertThat(cell(login, 1, 7)).isEqualTo("READY");
             assertThat(cell(login, 2, 0)).isEqualTo("로그인 실패");
             // 헤더(1) + 케이스(2) = 3행
             assertThat(login.getLastRowNum()).isEqualTo(2);
 
             Sheet paySheet = wb.getSheet("결제");
             assertThat(cell(paySheet, 1, 0)).isEqualTo("카드 결제");
-            assertThat(cell(paySheet, 1, 10)).isEqualTo("MOBILE"); // device
+            assertThat(cell(paySheet, 1, 11)).isEqualTo("MOBILE"); // device
 
             // 콘솔로 내용 전체를 덤프해 어떻게 다운로드되는지 보여준다.
             dump(wb);

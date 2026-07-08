@@ -174,8 +174,8 @@ async function main() {
     await page.click("#navPlans");
     await page.click("#newPlanButton");
     await page.fill("#planName", uniquePlan);
-    await page.selectOption("#planStatus", "ACTIVE");
-    await page.fill("#planDescription", "E2E release plan");
+    await page.selectOption("#planStatus", "IN_PROGRESS");
+    await page.fill("#planTestGoal", "E2E release plan");
     await page.click('#planForm button[type="submit"]');
     await page.waitForFunction(
       (planName) => Array.from(document.querySelectorAll("#planList .plan-item-name")).some((node) => node.textContent === planName),
@@ -203,7 +203,7 @@ async function main() {
     await page.click("#newRunButton");
     await page.waitForSelector("#newRunModal:not([hidden])");
     await page.selectOption("#runPlanSelect", { label: uniquePlan });
-    await page.selectOption("#runSuiteSelect", { label: `${uniqueSuite} (1건)` });
+    await page.locator("#runSuiteCheckList .tc-picker-tc", { hasText: uniqueSuite }).locator('input[type="checkbox"]').check();
     await page.click("#newRunCreateButton");
     await page.waitForSelector("#runDetail:not([hidden])");
     await page.waitForFunction(
