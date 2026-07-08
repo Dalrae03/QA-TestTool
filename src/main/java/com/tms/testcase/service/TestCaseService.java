@@ -32,6 +32,7 @@ import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testcase.repository.TestCaseSpecification;
 import com.tms.testcase.repository.TestCaseVersionRepository;
 import com.tms.testcase.repository.TestFolderRepository;
+import com.tms.testplan.repository.TestPlanRepository;
 import com.tms.testrun.repository.TestRunRepository;
 import com.tms.testsuite.service.TestSuiteService;
 import jakarta.persistence.EntityNotFoundException;
@@ -62,6 +63,7 @@ public class TestCaseService {
     private final TestRunRepository testRunRepository;
     private final AuditLogService auditLogService;
     private final TestCaseVersionRepository testCaseVersionRepository;
+    private final TestPlanRepository testPlanRepository;
 
     public TestCaseService(
             TestCaseRepository testCaseRepository,
@@ -74,7 +76,8 @@ public class TestCaseService {
             TestFolderRepository testFolderRepository,
             TestRunRepository testRunRepository,
             AuditLogService auditLogService,
-            TestCaseVersionRepository testCaseVersionRepository
+            TestCaseVersionRepository testCaseVersionRepository,
+            TestPlanRepository testPlanRepository
     ) {
         this.testCaseRepository = testCaseRepository;
         this.areaTagRepository = areaTagRepository;
@@ -87,6 +90,7 @@ public class TestCaseService {
         this.testRunRepository = testRunRepository;
         this.auditLogService = auditLogService;
         this.testCaseVersionRepository = testCaseVersionRepository;
+        this.testPlanRepository = testPlanRepository;
     }
 
     public List<TestCaseResponse> getAllTestCases(
@@ -338,6 +342,8 @@ public class TestCaseService {
         testCaseVersionRepository.deleteAllByTestCaseId(id);
         testRunRepository.deleteAllByTestCaseId(id);
         testSuiteService.removeTestCaseFromAllSuites(id);
+        testPlanRepository.findAllByCoreTestCases_Id(id)
+                .forEach(plan -> plan.removeCoreTestCase(id));
         attachmentService.deleteAllByEntity(AttachmentEntityType.TEST_CASE, id);
         testCaseRepository.delete(testCase);
     }

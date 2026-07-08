@@ -153,8 +153,19 @@ public class ExecutionService {
         if (!missingIds.isEmpty()) {
             throw new EntityNotFoundException("TestSuite not found. id=" + missingIds);
         }
+        // 실행의 projectId는 스위트에서 도출한다: request.projectId()가 있으면 그것을,
+        // 없으면 선택된 스위트의 프로젝트를 쓴다(프로젝트 미선택 상태로 만든 런이 projectId=null로
+        // 저장돼 프로젝트별 목록에서 사라지는 것을 막는다).
+        Long effectiveProjectId = request.projectId();
+        if (effectiveProjectId == null) {
+            effectiveProjectId = suites.stream()
+                    .map(TestSuite::getProjectId)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst().orElse(null);
+        }
+        Long scopeId = effectiveProjectId;
         List<Long> mismatched = suites.stream()
-                .filter(s -> !ProjectScope.compatible(request.projectId(), s.getProjectId()))
+                .filter(s -> !ProjectScope.compatible(scopeId, s.getProjectId()))
                 .map(TestSuite::getId).toList();
         if (!mismatched.isEmpty()) {
             throw new InvalidRequestException("다른 프로젝트의 스위트로는 테스트런을 만들 수 없습니다: " + mismatched);
@@ -173,27 +184,32 @@ public class ExecutionService {
 
         boolean single = suites.size() == 1;
         TestSuite first = suites.get(0);
-        String defaultName = single
-                ? first.getName() + " — " + LocalDate.now()
-                : suites.stream().map(TestSuite::getName).collect(Collectors.joining(", ")) + " — " + LocalDate.now();
+        String suiteNames = suites.stream().map(TestSuite::getName).collect(Collectors.joining(", "));
+        String defaultName = (single ? first.getName() : suiteNames) + " — " + LocalDate.now();
         String name = request.name() != null && !request.name().isBlank() ? request.name().trim() : defaultName;
 
-        // B안: testPlan이 null일 수 있음. 여러 스위트가 서로 다른 플랜에 속하면 플랜을 지정하지 않는다.
+        // B안: testPlan이 null일 수 있음. 여러 스위트가 서로 다른 플랜에 속하면 플랜을 지정하지 않지만,
+        //       선택된 스위트가 모두 같은 플랜에 속하면 그 플랜을 실행에 연결한다.
         Long planId = null;
         String planName = null;
-        if (single && first.getTestPlan() != null) {
+        Set<Long> planIds = suites.stream()
+                .map(TestSuite::getTestPlan)
+                .filter(java.util.Objects::nonNull)
+                .map(TestPlan::getId)
+                .collect(Collectors.toSet());
+        if (planIds.size() == 1 && suites.stream().allMatch(s -> s.getTestPlan() != null)) {
             planId = first.getTestPlan().getId();
             planName = first.getTestPlan().getName();
         }
 
         Execution execution = new Execution(
-                name,
+                truncate(name, 200),
                 normalizeOptional(request.description()),
-                single ? first.getProjectId() : request.projectId(),
+                effectiveProjectId,
                 planId,
                 planName,
                 single ? first.getId() : null,
-                single ? first.getName() : suites.stream().map(TestSuite::getName).collect(Collectors.joining(", ")),
+                truncate(single ? first.getName() : suiteNames, 200),
                 normalizeOptional(request.assignee()),
                 normalizeOptional(request.version())
         );
@@ -428,5 +444,11 @@ public class ExecutionService {
     private String normalizeOptional(String value) {
         if (value == null || value.isBlank()) return null;
         return value.trim();
+    }
+
+    /** 컬럼 길이를 초과하는 문자열을 잘라 INSERT 실패(Data too long)를 방지한다. */
+    private static String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) return value;
+        return value.substring(0, maxLength);
     }
 }

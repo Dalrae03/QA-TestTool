@@ -17,9 +17,23 @@ public class V6__add_test_plan_core_cases_pk extends BaseJavaMigration {
     @Override
     public void migrate(Context context) throws Exception {
         Connection conn = context.getConnection();
-        if (!tableExists(conn) || hasPrimaryKey(conn)) {
+        if (!tableExists(conn)) {
+            // 신규 설치: Flyway는 Hibernate ddl-auto보다 먼저 돌기 때문에 아직 조인 테이블이 없다.
+            // 여기서 PK를 갖춰 미리 만들어 두면, 뒤이어 도는 ddl-auto=update가 이 테이블을 그대로 두고
+            // FK 제약만 추가한다(FK 대상 test_plans/test_cases는 이 시점에 아직 없으므로 여기서 만들지 않는다).
+            try (Statement st = conn.createStatement()) {
+                st.executeUpdate(
+                        "CREATE TABLE test_plan_core_cases (" +
+                        "  test_plan_id BIGINT NOT NULL," +
+                        "  test_case_id BIGINT NOT NULL," +
+                        "  PRIMARY KEY (test_plan_id, test_case_id))");
+            }
             return;
         }
+        if (hasPrimaryKey(conn)) {
+            return;
+        }
+        // 기존 설치: Hibernate가 이미 만든 PK 없는 테이블에 복합 PK를 추가한다.
         try (Statement st = conn.createStatement()) {
             st.executeUpdate("ALTER TABLE test_plan_core_cases ADD PRIMARY KEY (test_plan_id, test_case_id)");
         }

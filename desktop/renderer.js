@@ -1121,7 +1121,12 @@ function renderFilterVersionSelect() {
   )].sort();
   elements.filterVersion.innerHTML = '<option value="">버전 전체</option>';
   versions.forEach(v => { const opt = document.createElement("option"); opt.value = v; opt.textContent = v; elements.filterVersion.appendChild(opt); });
-  elements.filterVersion.value = versions.includes(prev) ? prev : "";
+  // 적용 중인 버전 필터가 더 이상 존재하지 않으면 필터도 함께 해제한다 — 그렇지 않으면
+  // 드롭다운은 "버전 전체"로 보이는데 목록은 조용히 비워지는 상태가 된다.
+  if (state.filters.version && !versions.includes(state.filters.version)) {
+    state.filters.version = "";
+  }
+  elements.filterVersion.value = versions.includes(prev) ? prev : (state.filters.version || "");
 }
 function renderSelectedTagChips() {
   elements.selectedTagChips.innerHTML = "";
@@ -4072,6 +4077,10 @@ async function populateRunSuiteSelect(planId) {
       return;
     }
     listEl.innerHTML = "";
+    // 목록을 다시 그릴 때(플랜 변경·스위트 저장 등) 더 이상 보이지 않거나 선택 불가해진 스위트가
+    // 숨은 채 선택 상태로 남아 제출되지 않도록, 현재 선택 가능한 스위트만 남기고 정리한다.
+    const selectableIds = new Set(suites.filter(s => (s.testCases?.length || 0) > 0).map(s => s.id));
+    [..._runSuitePickerSelectedIds].forEach(id => { if (!selectableIds.has(id)) _runSuitePickerSelectedIds.delete(id); });
     suites.forEach(s => {
       const count = s.testCases?.length || 0;
       const disabled = count === 0;
@@ -4084,6 +4093,7 @@ async function populateRunSuiteSelect(planId) {
         `<div class="tc-picker-tc-info"><div class="tc-picker-tc-title">${escapeHtml(s.name)}</div>` +
         `<div class="tc-picker-tc-badges">${count}건${s.testPlanName ? " · " + escapeHtml(s.testPlanName) : ""}${disabled ? " · 생성 불가" : ""}</div></div>`;
       const checkbox = row.querySelector("input");
+      checkbox.checked = _runSuitePickerSelectedIds.has(s.id);
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) _runSuitePickerSelectedIds.add(s.id);
         else _runSuitePickerSelectedIds.delete(s.id);
@@ -4698,6 +4708,9 @@ async function refreshAllForProjectSwitch() {
   state.testSuites = [];
   state.selectedExecutionId = null;
   state.currentExec = null;
+  // 플랜 핵심대상 피커 캐시를 비운다 — 그대로 두면 프로젝트 전환 후에도 이전 프로젝트의
+  // 테스트케이스가 표시되고, 그것을 선택해 저장하면 서버가 다른 프로젝트 케이스라며 거부한다.
+  _planTcPickerAllTcs = [];
   // 열려 있던 테스트케이스 상세는 다른 프로젝트 소속일 수 있으므로 비워둔다 —
   // 그대로 두면 목록/실행기록은 새 프로젝트 기준으로 바뀌는데 상세 패널만 이전 프로젝트의 케이스를 계속 보여주게 된다.
   hideEditor();

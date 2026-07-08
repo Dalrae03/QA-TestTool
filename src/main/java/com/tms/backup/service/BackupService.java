@@ -23,7 +23,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -244,6 +247,26 @@ public class BackupService {
                     List<String> columns = (List<String>) table.get("columns");
                     List<Integer> types = ((List<Number>) table.get("types")).stream().map(Number::intValue).toList();
                     List<List<Object>> rows = (List<List<Object>>) table.get("rows");
+
+                    // 백업 이후 스키마가 바뀌어(예: 마이그레이션으로 컬럼 삭제) 대상 테이블에 더 이상
+                    // 존재하지 않는 컬럼은 건너뛴다 — 그대로 INSERT하면 'Unknown column'으로 전체 복구가 실패한다.
+                    Set<String> existing = tableColumns(conn, name);
+                    List<Integer> keep = new ArrayList<>();
+                    for (int i = 0; i < columns.size(); i++) {
+                        if (existing.contains(columns.get(i).toLowerCase(Locale.ROOT))) keep.add(i);
+                    }
+                    if (keep.isEmpty()) continue;
+                    if (keep.size() < columns.size()) {
+                        List<Integer> idx = keep;
+                        List<String> keptCols = idx.stream().map(columns::get).toList();
+                        List<Integer> keptTypes = idx.stream().map(types::get).toList();
+                        List<List<Object>> keptRows = rows.stream()
+                                .map(r -> idx.stream().map(r::get).collect(Collectors.toCollection(ArrayList::new)))
+                                .collect(Collectors.toCollection(ArrayList::new));
+                        columns = keptCols;
+                        types = keptTypes;
+                        rows = keptRows;
+                    }
                     totalRows += insertRows(conn, name, columns, types, rows);
                 }
                 setForeignKeyChecks(conn, mysql, true);
@@ -346,6 +369,21 @@ public class BackupService {
                 table.toUpperCase(), new String[]{"TABLE"})) {
             return rs.next();
         }
+    }
+
+    /** 대상 테이블에 실제로 존재하는 컬럼명 집합(소문자)을 반환한다. */
+    private Set<String> tableColumns(Connection conn, String table) throws SQLException {
+        Set<String> cols = new java.util.HashSet<>();
+        DatabaseMetaData md = conn.getMetaData();
+        for (String candidate : new String[]{table, table.toUpperCase(Locale.ROOT)}) {
+            try (ResultSet rs = md.getColumns(conn.getCatalog(), conn.getSchema(), candidate, null)) {
+                while (rs.next()) {
+                    cols.add(rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT));
+                }
+            }
+            if (!cols.isEmpty()) break; // 대소문자 차이(H2 는 기본 대문자)를 고려해 한 번 더 시도.
+        }
+        return cols;
     }
 
     private String quote(String identifier) {
