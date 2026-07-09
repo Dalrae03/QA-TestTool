@@ -28,6 +28,7 @@ const state = {
   selectedExecutionId: null,
   runAssigneeFilter: "",     // 런 목록 담당자 필터 — "" 전체 | "__none__" 미지정 | 담당자명
   runItemSelection: new Set(), // 결과 일괄 처리 — 현재 런에서 선택된 실행 아이템 id
+  tcSelection: new Set(),    // 목록 일괄 처리 — 선택된 테스트케이스 id
   runSourceMode: "suite",    // 새 테스트런 모달 — "suite" | "cases"
   showRunStats: false,       // 런 상세 — 진척도·통계 패널 표시 여부(버튼 토글)
   areaTags: [],
@@ -150,7 +151,7 @@ function switchView(v) {
   if (v === "dashboard") renderDashboard();
   if (v === "plans") loadTestPlans();
   if (v === "runs") loadExecutions();
-  if (v === "settings") { loadTestConfigurations(); loadUsers(); loadAreaTags(); }
+  if (v === "settings") { loadTestConfigurations(); loadUsers(); loadAreaTags(); loadJiraSettings(); }
 }
 
 function switchTcTab(t) {
@@ -475,15 +476,25 @@ function addSubFolder(parentId) {
 // ── 폴더 삭제 ─────────────────────────────────────────────────────
 
 async function deleteFolder(folderId) {
-  if (!window.confirm("폴더를 삭제할까요? (테스트케이스는 미분류로 이동됩니다)")) return;
   const toDelete = [folderId, ...getAllSubFolderIds(folderId)];
 
-  // 폴더에 속한 TC들을 먼저 미분류로 이동
-  for (const tcId of Object.keys(state.folderAssignments)) {
-    if (toDelete.includes(state.folderAssignments[tcId])) {
-      try { await request(`/api/testcases/${tcId}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }); } catch (_e) {}
-    }
+  // 폴더(및 하위 폴더)에 속한 TC들을 먼저 찾는다 — 이 케이스들은 폴더와 함께 삭제된다.
+  const tcIds = Object.keys(state.folderAssignments)
+    .filter(tcId => toDelete.includes(state.folderAssignments[tcId]));
+
+  const warn = tcIds.length > 0
+    ? `폴더를 삭제할까요?\n\n폴더에 속한 테스트케이스 ${tcIds.length}건도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`
+    : "폴더를 삭제할까요?";
+  if (!window.confirm(warn)) return;
+
+  // 폴더에 속한 TC들을 먼저 삭제한다 (백엔드는 케이스가 남아있는 폴더 삭제를 거부하므로).
+  for (const tcId of tcIds) {
+    try {
+      await request(`/api/testcases/${tcId}`, { method: "DELETE" });
+      delete state.folderAssignments[tcId];
+    } catch (_e) {}
   }
+  persistFolders();
   // 하위 폴더부터 순서대로 삭제 (leaf → root)
   const ordered = toDelete.slice().reverse();
   for (const id of ordered) {
@@ -2169,6 +2180,87 @@ async function jiraSyncAll() {
   }
 }
 
+// ── Jira 연동 설정 ────────────────────────────────────────────────
+
+function _setJiraSettingsStatus(msg, kind) {
+  const el = document.getElementById("jiraSettingsStatus");
+  if (!el) return;
+  if (!msg) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.textContent = msg;
+  el.className = "jira-settings-status " + (kind || "");
+}
+
+// 화면 입력값을 저장/테스트 요청 body로 모은다.
+function _collectJiraSettings() {
+  const val = id => document.getElementById(id).value.trim();
+  return {
+    baseUrl: val("jiraBaseUrl"),
+    email: val("jiraEmail"),
+    apiToken: document.getElementById("jiraApiToken").value,  // 공백이면 백엔드가 기존 토큰 유지
+    projectKey: val("jiraProjectKey"),
+    webBaseUrl: val("jiraWebBaseUrl"),
+    enabled: document.getElementById("jiraEnabled").checked
+  };
+}
+
+async function loadJiraSettings() {
+  try {
+    const s = await request("/api/jira/settings", { method: "GET" });
+    document.getElementById("jiraBaseUrl").value = s.baseUrl || "";
+    document.getElementById("jiraEmail").value = s.email || "";
+    document.getElementById("jiraProjectKey").value = s.projectKey || "";
+    document.getElementById("jiraWebBaseUrl").value = s.webBaseUrl || "";
+    document.getElementById("jiraEnabled").checked = s.enabled !== false;
+    // 토큰은 서버에서 내려오지 않는다 — 저장돼 있으면 placeholder로만 표시.
+    const tokenInput = document.getElementById("jiraApiToken");
+    tokenInput.value = "";
+    tokenInput.placeholder = s.hasToken
+      ? "저장된 토큰이 있습니다 (변경하려면 새로 입력)"
+      : "API 토큰을 입력하세요";
+    if (s.configured) _setJiraSettingsStatus("✓ Jira 연동이 설정되어 있습니다.", "ok");
+    else _setJiraSettingsStatus("Jira 연동이 아직 설정되지 않았습니다.", "");
+  } catch (e) {
+    _setJiraSettingsStatus(`설정을 불러오지 못했습니다: ${e.message}`, "err");
+  }
+}
+
+async function saveJiraSettings() {
+  const btn = document.getElementById("jiraSaveButton");
+  try {
+    btn.disabled = true; btn.textContent = "저장 중...";
+    const s = await request("/api/jira/settings", { method: "PUT", body: JSON.stringify(_collectJiraSettings()) });
+    _toast("Jira 설정을 저장했습니다.");
+    document.getElementById("jiraApiToken").value = "";
+    document.getElementById("jiraApiToken").placeholder = s.hasToken
+      ? "저장된 토큰이 있습니다 (변경하려면 새로 입력)" : "API 토큰을 입력하세요";
+    if (s.configured) _setJiraSettingsStatus("✓ Jira 연동이 설정되어 있습니다.", "ok");
+    else _setJiraSettingsStatus("필수 항목(Base URL·이메일·토큰·프로젝트 키)을 모두 채워야 연동이 활성화됩니다.", "");
+  } catch (e) {
+    _setJiraSettingsStatus(`저장 실패: ${e.message}`, "err");
+    _toast(`저장 실패: ${e.message}`, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "저장";
+  }
+}
+
+async function testJiraConnection() {
+  const btn = document.getElementById("jiraTestButton");
+  try {
+    btn.disabled = true; btn.textContent = "테스트 중...";
+    _setJiraSettingsStatus("Jira에 연결 중...", "");
+    const r = await request("/api/jira/settings/test", { method: "POST", body: JSON.stringify(_collectJiraSettings()) });
+    const who = r.accountDisplayName ? `${r.accountDisplayName}${r.accountEmail ? " (" + r.accountEmail + ")" : ""}` : "인증됨";
+    _setJiraSettingsStatus(`✓ 연결 성공 — 계정: ${who}, 프로젝트: ${r.projectName || "-"}`, "ok");
+    _toast("Jira 연결 성공");
+  } catch (e) {
+    _setJiraSettingsStatus(`✗ 연결 실패 — ${e.message}`, "err");
+    _toast(`연결 실패: ${e.message}`, true);
+  } finally {
+    btn.disabled = false; btn.textContent = "🔌 연결 테스트";
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 복제
 // ══════════════════════════════════════════════════════════════════
@@ -2303,7 +2395,9 @@ function createTableRow(tc) {
   const env = [tc.serverEnvironment?.name,tc.os,tc.browser,tc.device].filter(Boolean);
   const tags = tc.areaTags ?? [];
   tr.draggable = true;
+  if (state.tcSelection.has(tc.id)) tr.classList.add("tc-row-selected");
   tr.innerHTML = `
+    <td class="tc-select-cell"><input type="checkbox" class="tc-select"${state.tcSelection.has(tc.id) ? " checked" : ""} title="일괄 처리 선택"></td>
     <td><span class="tc-id" title="드래그하여 폴더 이동" style="cursor:grab">⋮ TC-${String(tc.id).padStart(3,"0")}</span></td>
     <td><span class="tc-ttl">${escapeHtml(tc.title)}</span>${tc.status==="REVIEW_NEEDED"?'<span class="attn-flag">⚠ 검토 필요</span>':""}</td>
     <td>${statusBadge(tc.status)}</td>
@@ -2313,6 +2407,15 @@ function createTableRow(tc) {
     <td>${tags.map(t=>`<span class="badge b-tag">${escapeHtml(t.name)}</span>`).join(" ")}</td>
     <td>${tc.currentVersionLabel ? `<span class="badge b-tag">${escapeHtml(tc.currentVersionLabel)}</span>` : '<span style="font-size:11px;color:var(--text-muted)">-</span>'}</td>
     <td><span style="font-size:11px;color:var(--text-muted)">${tc.updatedAt ? escapeHtml(formatDateTime(tc.updatedAt)) : "-"}</span></td>`;
+  // 일괄 선택 체크박스 — 행 클릭(상세 보기)과 분리한다.
+  const selectBox = tr.querySelector(".tc-select");
+  selectBox.addEventListener("click", e => e.stopPropagation());
+  selectBox.addEventListener("change", () => {
+    if (selectBox.checked) state.tcSelection.add(tc.id);
+    else state.tcSelection.delete(tc.id);
+    tr.classList.toggle("tc-row-selected", selectBox.checked);
+    renderTcBulkBar();
+  });
   // 클릭: 상세 보기
   tr.addEventListener("click", async () => { await populateForm(tc); switchTcTab("detail"); });
   // 드래그: 폴더로 이동
@@ -2350,7 +2453,7 @@ function _makeGrpRow(name, count, reviewCount, depth = 0, groupKey = null) {
     ? `<span class="badge b-review" style="margin-left:8px;font-size:10px">검토 ${reviewCount}건</span>`
     : "";
   const indentStyle = depth > 0 ? `padding-left:${12 + depth * 16}px` : "";
-  tr.innerHTML = `<td colspan="9" style="${indentStyle}"><span class="grp-row-caret">▾</span>📁 ${escapeHtml(name)}&nbsp;&nbsp;${count}${badge}</td>`;
+  tr.innerHTML = `<td colspan="10" style="${indentStyle}"><span class="grp-row-caret">▾</span>📁 ${escapeHtml(name)}&nbsp;&nbsp;${count}${badge}</td>`;
   if (groupKey != null) {
     tr.addEventListener("click", () => toggleTcGroupCollapse(groupKey));
   }
@@ -2427,6 +2530,11 @@ function renderList() {
   elements.list.innerHTML = "";
   let filtered = getFilteredTestCases();
 
+  // 삭제·필터로 더 이상 존재하지 않는 케이스는 선택 목록에서 정리한다.
+  const liveIds = new Set(state.testCases.map(tc => tc.id));
+  [...state.tcSelection].forEach(id => { if (!liveIds.has(id)) state.tcSelection.delete(id); });
+  renderTcBulkBar(filtered);
+
   if (elements.mainSearchCount) elements.mainSearchCount.textContent = `${filtered.length}개`;
   if (filtered.length === 0) {
     updateStatus(state.testCases.length === 0 ? "저장된 테스트케이스가 없습니다." : "조건에 맞는 케이스가 없습니다.");
@@ -2451,6 +2559,65 @@ function renderList() {
 
   // 그 외 (리프 폴더, 미분류) → 단순 평면 목록
   filtered.forEach(tc => elements.list.appendChild(createTableRow(tc)));
+}
+
+// ── 테스트케이스 일괄 선택/삭제 ────────────────────────────────────
+
+// 선택 상태에 맞춰 일괄 처리 바와 '전체 선택' 체크박스를 갱신한다.
+// visible: 현재 화면에 보이는(필터 적용된) 케이스 목록 — 전체 선택 상태 판단에 사용.
+function renderTcBulkBar(visible) {
+  const bar = document.getElementById("tcBulkBar");
+  const count = state.tcSelection.size;
+  if (bar) {
+    bar.hidden = count === 0;
+    const countEl = document.getElementById("tcBulkCount");
+    if (countEl) countEl.textContent = `${count}개 선택됨`;
+  }
+  const selectAll = document.getElementById("tcSelectAll");
+  if (selectAll) {
+    const vis = visible || getFilteredTestCases();
+    const selectedVisible = vis.filter(tc => state.tcSelection.has(tc.id)).length;
+    selectAll.checked = vis.length > 0 && selectedVisible === vis.length;
+    selectAll.indeterminate = selectedVisible > 0 && selectedVisible < vis.length;
+  }
+}
+
+// '전체 선택' 체크박스 — 현재 화면에 보이는 케이스를 모두 선택/해제한다.
+function toggleSelectAllTc(checked) {
+  const visible = getFilteredTestCases();
+  visible.forEach(tc => { if (checked) state.tcSelection.add(tc.id); else state.tcSelection.delete(tc.id); });
+  renderList();
+}
+
+function clearTcSelection() {
+  state.tcSelection.clear();
+  renderList();
+}
+
+async function bulkDeleteTestCases() {
+  const ids = [...state.tcSelection];
+  if (ids.length === 0) return;
+  if (!window.confirm(`선택한 테스트케이스 ${ids.length}건을 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+
+  const btn = document.getElementById("tcBulkDeleteBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "삭제 중..."; }
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try {
+      await request(`/api/testcases/${id}`, { method: "DELETE" });
+      state.tcSelection.delete(id);
+      delete state.folderAssignments[String(id)];
+      ok++;
+    } catch (_e) { fail++; }
+  }
+  persistFolders();
+  if (btn) { btn.disabled = false; btn.textContent = "🗑 선택 삭제"; }
+  // 현재 상세로 열려 있던 케이스가 삭제됐다면 에디터를 정리한다.
+  if (state.selectedId && !state.tcSelection.has(state.selectedId) && ids.includes(state.selectedId)) {
+    hideEditor(); setSelected(null);
+  }
+  _toast(fail === 0 ? `${ok}건 삭제 완료` : `${ok}건 삭제, ${fail}건 실패`, fail > 0);
+  await loadTestCases();
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2714,14 +2881,33 @@ function addSuiteFolder() {
   input.addEventListener("blur", confirm, { once: true });
 }
 
-function deleteSuiteFolder(folderId) {
-  if (!window.confirm("폴더를 삭제할까요? (스위트는 미분류로 이동됩니다)")) return;
+async function deleteSuiteFolder(folderId) {
   const toDelete = [folderId, ...getAllSubSuiteFolderIds(folderId)];
+
+  // 폴더(및 하위 폴더)에 속한 스위트들을 먼저 찾는다 — 이 스위트들은 폴더와 함께 삭제된다.
+  const suiteIds = Object.keys(state.suiteFolderAssignments)
+    .filter(sid => toDelete.includes(state.suiteFolderAssignments[sid]));
+
+  const warn = suiteIds.length > 0
+    ? `폴더를 삭제할까요?\n\n폴더에 속한 스위트 ${suiteIds.length}개도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`
+    : "폴더를 삭제할까요?";
+  if (!window.confirm(warn)) return;
+
+  // 폴더에 속한 스위트를 백엔드에서 삭제한다.
+  for (const sid of suiteIds) {
+    try {
+      await request(`/api/suites/${sid}`, { method: "DELETE" });
+      delete state.suiteFolderAssignments[sid];
+    } catch (_e) {}
+  }
+  // 폴더(및 하위 폴더)와 남은 배정을 정리한다.
   state.suiteFolders = state.suiteFolders.filter(f => !toDelete.includes(f.id));
   for (const sid of Object.keys(state.suiteFolderAssignments)) {
     if (toDelete.includes(state.suiteFolderAssignments[sid])) delete state.suiteFolderAssignments[sid];
   }
-  persistSuiteFolders(); renderSuiteList();
+  persistSuiteFolders();
+  if (state.selectedPlanId) await loadTestSuites(state.selectedPlanId);
+  else renderSuiteList();
 }
 
 function _clearSuiteDrop() {
@@ -3638,17 +3824,30 @@ function renderExecutionDetail(exec) {
   const buildFn = window._patchedBuildRunItemRow || buildRunItemRow;
   const items = exec.items || [];
   const suiteGroups = groupItemsBySuite(items);
-  if (suiteGroups.length > 1) {
+  // 출처 스위트가 붙은 그룹 수 — 2개 이상일 때만 '스위트 제거' 버튼을 노출한다(마지막 스위트는 제거 불가).
+  const suiteGroupCount = suiteGroups.filter(g => g.suiteId != null).length;
+  const showSuiteHeaders = suiteGroups.length > 1 || suiteGroupCount > 0;
+  if (showSuiteHeaders) {
     suiteGroups.forEach(group => {
       const header = document.createElement("div");
       header.className = "run-item-suite-hd";
-      header.innerHTML = `<span class="run-item-suite-name">📋 ${escapeHtml(group.suiteName)}</span><span class="badge b-tag">${group.items.length}</span>`;
+      const canRemove = group.suiteId != null && suiteGroupCount > 1 && !isCompleted;
+      const removeBtn = canRemove
+        ? `<button type="button" class="run-suite-remove" title="이 스위트에서 온 항목을 런에서 제거">✕ 스위트 제거</button>`
+        : "";
+      header.innerHTML = `<span class="run-item-suite-name">📋 ${escapeHtml(group.suiteName)}</span><span class="badge b-tag">${group.items.length}</span>${removeBtn}`;
+      if (canRemove) {
+        header.querySelector(".run-suite-remove")
+          .addEventListener("click", () => removeSuiteFromRun(group.suiteId, group.suiteName));
+      }
       cont.appendChild(header);
       group.items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
     });
   } else {
     items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
   }
+  const addSuiteBtn = document.getElementById("runAddSuiteButton");
+  if (addSuiteBtn) addSuiteBtn.disabled = isCompleted;
   renderBulkBar();
 }
 
@@ -3746,7 +3945,7 @@ function caseDetailDefectsHtml(defects) {
       `<span class="case-detail-defect-title">${escapeHtml(d.title)}</span>${jira}${link}` +
     `</div>`;
   }).join("");
-  return `<div class="case-detail-field"><strong>연결된 결함 (${defects.length})</strong>${rows}</div>`;
+  return `<div class="case-detail-field case-detail-defects"><strong>🐛 연결된 결함 (${defects.length})</strong>${rows}</div>`;
 }
 
 // 이번 런에서 이 케이스를 실행한 재시도 이력 — 실패→재테스트→통과 같은 흐름을 시간 순으로 보여준다.
@@ -3817,6 +4016,12 @@ function buildRunItemRow(item, isCompleted) {
   row.dataset.status = item.status;
   const cls = RESULT_CLASS[item.status] || "untested";
   const versionText = item.versionLabel || (item.versionNumber ? `v${item.versionNumber}` : null);
+  // 이 케이스에 연결된 결함이 있으면 행을 강조하고 눈에 띄는 🐛 배지를 단다.
+  const defectCount = item.defectCount || 0;
+  if (defectCount > 0) row.classList.add("has-defect");
+  const defectFlag = defectCount > 0
+    ? `<span class="defect-flag" title="이 케이스에 연결된 결함 ${defectCount}건">🐛 결함 ${defectCount}</span>`
+    : "";
   // 완료된 런은 읽기 전용이라 일괄 선택 체크박스를 두지 않는다.
   const checkbox = isCompleted ? "" :
     `<input type="checkbox" class="suite-run-select"${state.runItemSelection.has(item.id) ? " checked" : ""} title="일괄 처리 선택">`;
@@ -3826,6 +4031,7 @@ function buildRunItemRow(item, isCompleted) {
       `<span class="suite-run-tc">TC-${String(item.testCaseId).padStart(3, "0")}</span>` +
       `<span class="case-detail-toggle">▸</span>` +
       `<span class="suite-run-name" title="${escapeHtml(item.caseTitle)}">${escapeHtml(item.caseTitle)}</span>` +
+      defectFlag +
       `<span class="suite-run-badge ${cls}">${RESULT_LABEL[item.status] || item.status}</span>` +
       (versionText ? `<span class="run-item-version" title="이 런이 생성될 때 케이스의 버전">${escapeHtml(versionText)}</span>` : "") +
       (item.executedAt ? `<span class="suite-run-when">${escapeHtml(formatDateTime(item.executedAt))}</span>` : "") +
@@ -4149,6 +4355,90 @@ async function createExecution() {
 
 function closeNewRunModal() {
   document.getElementById("newRunModal").hidden = true;
+}
+
+// ── 기존 테스트런에 스위트 추가/제거 ──────────────────────────────────
+
+let _addSuiteSelectedIds = new Set();
+
+async function openAddSuiteModal() {
+  if (!state.selectedExecutionId) return;
+  if (state.currentExec && state.currentExec.status === "COMPLETED") {
+    _toast("완료된 테스트런에는 스위트를 추가할 수 없습니다. 먼저 다시 여세요.", true);
+    return;
+  }
+  _addSuiteSelectedIds = new Set();
+  document.getElementById("addSuiteModal").hidden = false;
+  await renderAddSuiteCheckList();
+}
+
+async function renderAddSuiteCheckList() {
+  const listEl = document.getElementById("addSuiteCheckList");
+  listEl.innerHTML = '<div class="tc-picker-empty">불러오는 중...</div>';
+  try {
+    const qs = state.currentProjectId ? `?projectId=${state.currentProjectId}` : "";
+    const suites = await request(`/api/suites${qs}`, { method: "GET" });
+    // 이미 이 런에 출처로 들어와 있는 스위트는 후보에서 제외한다.
+    const alreadyIn = new Set((state.currentExec?.items || []).map(it => it.sourceSuiteId).filter(v => v != null));
+    const candidates = suites.filter(s => !alreadyIn.has(s.id));
+    if (candidates.length === 0) {
+      listEl.innerHTML = '<div class="tc-picker-empty">추가할 수 있는 스위트가 없습니다.</div>';
+      return;
+    }
+    listEl.innerHTML = "";
+    candidates.forEach(s => {
+      const count = s.testCases?.length || 0;
+      const disabled = count === 0;
+      const row = document.createElement("label");
+      row.className = "tc-picker-tc";
+      row.style.opacity = disabled ? .5 : 1;
+      row.style.cursor = disabled ? "not-allowed" : "pointer";
+      row.innerHTML =
+        `<input type="checkbox" value="${s.id}" ${disabled ? "disabled" : ""}>` +
+        `<div class="tc-picker-tc-info"><div class="tc-picker-tc-title">${escapeHtml(s.name)}</div>` +
+        `<div class="tc-picker-tc-badges">${count}건${s.testPlanName ? " · " + escapeHtml(s.testPlanName) : ""}${disabled ? " · 케이스 없음" : ""}</div></div>`;
+      const checkbox = row.querySelector("input");
+      checkbox.checked = _addSuiteSelectedIds.has(s.id);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) _addSuiteSelectedIds.add(s.id);
+        else _addSuiteSelectedIds.delete(s.id);
+      });
+      listEl.appendChild(row);
+    });
+  } catch (e) { listEl.innerHTML = '<div class="tc-picker-empty">조회 실패</div>'; }
+}
+
+function closeAddSuiteModal() {
+  document.getElementById("addSuiteModal").hidden = true;
+}
+
+async function submitAddSuites() {
+  if (_addSuiteSelectedIds.size === 0) { _toast("추가할 스위트를 1개 이상 선택하세요.", true); return; }
+  const btn = document.getElementById("addSuiteConfirmButton");
+  try {
+    btn.disabled = true; btn.textContent = "추가 중...";
+    const updated = await request(`/api/test-runs/${state.selectedExecutionId}/suites`, {
+      method: "POST", body: JSON.stringify({ suiteIds: [..._addSuiteSelectedIds] })
+    });
+    closeAddSuiteModal();
+    renderExecutionDetail(updated);
+    const idx = state.executions.findIndex(e => e.id === updated.id);
+    if (idx >= 0) { state.executions[idx] = { ...state.executions[idx], ...summaryOf(updated) }; renderExecutionList(); }
+    _toast(`스위트를 추가했습니다 (총 ${updated.total}건).`);
+  } catch (e) { _toast(`스위트 추가 실패: ${e.message}`, true); }
+  finally { btn.disabled = false; btn.textContent = "추가"; }
+}
+
+async function removeSuiteFromRun(suiteId, suiteName) {
+  if (!state.selectedExecutionId) return;
+  if (!window.confirm(`스위트 '${suiteName}'에서 온 항목을 이 테스트런에서 제거할까요? 기록된 결과도 함께 삭제됩니다.`)) return;
+  try {
+    const updated = await request(`/api/test-runs/${state.selectedExecutionId}/suites/${suiteId}`, { method: "DELETE" });
+    renderExecutionDetail(updated);
+    const idx = state.executions.findIndex(e => e.id === updated.id);
+    if (idx >= 0) { state.executions[idx] = { ...state.executions[idx], ...summaryOf(updated) }; renderExecutionList(); }
+    _toast(`스위트 '${suiteName}'를 제거했습니다 (총 ${updated.total}건).`);
+  } catch (e) { _toast(`스위트 제거 실패: ${e.message}`, true); }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4501,6 +4791,8 @@ async function bootstrap() {
   elements.auditRefreshBtn?.addEventListener("click", () => loadAuditLogs());
   elements.versionRefreshBtn?.addEventListener("click", () => loadTestCaseVersions());
   document.getElementById("jiraSyncAllBtn")?.addEventListener("click", jiraSyncAll);
+  document.getElementById("jiraSaveButton")?.addEventListener("click", saveJiraSettings);
+  document.getElementById("jiraTestButton")?.addEventListener("click", testJiraConnection);
 
   // 결함 추가 / 연결
   document.getElementById("addDefectBtn")?.addEventListener("click", toggleDefectCreateForm);
@@ -4529,6 +4821,10 @@ async function bootstrap() {
   elements.deleteButton.addEventListener("click",    handleDelete);
   elements.addStepButton.addEventListener("click",   () => appendStepRow());
 
+  document.getElementById("tcSelectAll")?.addEventListener("change", e => toggleSelectAllTc(e.target.checked));
+  document.getElementById("tcBulkDeleteBtn")?.addEventListener("click", bulkDeleteTestCases);
+  document.getElementById("tcBulkClearBtn")?.addEventListener("click", clearTcSelection);
+
   document.getElementById("newPlanButton").addEventListener("click", () => showPlanForm());
   document.getElementById("newSuiteButton")?.addEventListener("click", () => showSuiteForm());
   document.getElementById("newSuiteFolderButton")?.addEventListener("click", addSuiteFolder);
@@ -4548,6 +4844,10 @@ async function bootstrap() {
   document.getElementById("runSourceTabSuite").addEventListener("click", () => setRunSourceMode("suite"));
   document.getElementById("runSourceTabCases").addEventListener("click", () => setRunSourceMode("cases"));
   document.getElementById("runCompleteButton").addEventListener("click", toggleExecutionComplete);
+  document.getElementById("runAddSuiteButton").addEventListener("click", openAddSuiteModal);
+  document.getElementById("addSuiteCloseButton").addEventListener("click", closeAddSuiteModal);
+  document.getElementById("addSuiteCancelButton").addEventListener("click", closeAddSuiteModal);
+  document.getElementById("addSuiteConfirmButton").addEventListener("click", submitAddSuites);
   document.getElementById("runCloneButton").addEventListener("click", cloneSelectedExecution);
   document.getElementById("runReportButton").addEventListener("click", exportSelectedRunReport);
   document.getElementById("runStatsButton").addEventListener("click", toggleRunStats);

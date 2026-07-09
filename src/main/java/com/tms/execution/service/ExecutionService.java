@@ -1,5 +1,6 @@
 package com.tms.execution.service;
 
+import com.tms.execution.dto.AddSuitesToExecutionRequest;
 import com.tms.execution.dto.BulkRecordResultRequest;
 import com.tms.execution.dto.CreateExecutionRequest;
 import com.tms.execution.dto.ExecutionResponse;
@@ -128,7 +129,26 @@ public class ExecutionService {
     }
 
     public ExecutionResponse getExecution(Long id) {
-        return ExecutionResponse.detail(findById(id));
+        return detailWithDefects(findById(id));
+    }
+
+    /**
+     * 실행 상세 응답을 만들되, 각 아이템 케이스에 연결된 결함 수를 함께 실어 준다.
+     * 프론트에서 실행 그리드 행에 결함 배지를 바로 노출하기 위한 것.
+     */
+    private ExecutionResponse detailWithDefects(Execution execution) {
+        List<Long> caseIds = execution.getItems().stream()
+                .map(ExecutionItem::getTestCaseId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Integer> defectCounts = new java.util.HashMap<>();
+        if (!caseIds.isEmpty()) {
+            for (Object[] row : testCaseRepository.countDefectsByTestCaseIds(caseIds)) {
+                defectCounts.put(((Number) row[0]).longValue(), ((Number) row[1]).intValue());
+            }
+        }
+        return ExecutionResponse.detail(execution, defectCounts);
     }
 
     @Transactional
@@ -336,7 +356,7 @@ public class ExecutionService {
         Execution saved = executionRepository.save(execution);
         auditLogService.log(AuditLogService.TEST_RUN, saved.getId(), AuditAction.CREATED,
                 "테스트런 '" + saved.getName() + "'이(가) 생성되었습니다. (" + saved.getItems().size() + "건)");
-        return ExecutionResponse.detail(saved);
+        return detailWithDefects(saved);
     }
 
     @Transactional
@@ -358,7 +378,7 @@ public class ExecutionService {
             auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.REOPENED,
                     "테스트런 '" + execution.getName() + "'이(가) 다시 열렸습니다.");
         }
-        return ExecutionResponse.detail(execution);
+        return detailWithDefects(execution);
     }
 
     @Transactional
@@ -371,14 +391,118 @@ public class ExecutionService {
                     .orElseThrow(() -> new EntityNotFoundException("TestPlan not found. id=" + request.testPlanId()));
             execution.updatePlan(plan.getId(), plan.getName());
         }
-        return ExecutionResponse.detail(execution);
+        return detailWithDefects(execution);
     }
 
     @Transactional
     public ExecutionResponse updateExecutionEnvironment(Long id, UpdateExecutionEnvironmentRequest request) {
         Execution execution = findById(id);
         applyConfiguration(execution, request.testConfigurationId());
-        return ExecutionResponse.detail(execution);
+        return detailWithDefects(execution);
+    }
+
+    /**
+     * 이미 만들어진 테스트런에 스위트를 추가한다 — 선택한 스위트들의 테스트케이스를 붙이되,
+     * 이미 런에 들어 있는 케이스는 건너뛴다(중복 방지). 새로 붙는 항목은 결과 미실행으로 시작한다.
+     */
+    @Transactional
+    public ExecutionResponse addSuitesToExecution(Long id, AddSuitesToExecutionRequest request) {
+        Execution execution = findById(id);
+        if (execution.getStatus().isCompleted()) {
+            throw new InvalidRequestException("완료된 테스트런에는 스위트를 추가할 수 없습니다. 먼저 다시 열어 주세요.");
+        }
+        List<Long> suiteIds = new LinkedHashSet<>(
+                request.suiteIds().stream().filter(java.util.Objects::nonNull).toList()).stream().toList();
+        if (suiteIds.isEmpty()) {
+            throw new InvalidRequestException("추가할 스위트를 선택해야 합니다.");
+        }
+
+        List<TestSuite> suites = testSuiteRepository.findAllById(suiteIds);
+        List<Long> foundIds = suites.stream().map(TestSuite::getId).toList();
+        List<Long> missingIds = suiteIds.stream().filter(sid -> !foundIds.contains(sid)).toList();
+        if (!missingIds.isEmpty()) {
+            throw new EntityNotFoundException("TestSuite not found. id=" + missingIds);
+        }
+        List<Long> mismatched = suites.stream()
+                .filter(s -> !ProjectScope.compatible(execution.getProjectId(), s.getProjectId()))
+                .map(TestSuite::getId).toList();
+        if (!mismatched.isEmpty()) {
+            throw new InvalidRequestException("다른 프로젝트의 스위트는 테스트런에 추가할 수 없습니다: " + mismatched);
+        }
+
+        Set<Long> existingCaseIds = execution.getItems().stream()
+                .map(ExecutionItem::getTestCaseId)
+                .collect(Collectors.toCollection(java.util.HashSet::new));
+        int added = 0;
+        for (TestSuite suite : suites) {
+            for (TestCase testCase : suite.getTestCases()) {
+                if (existingCaseIds.add(testCase.getId())) {
+                    addItemWithCurrentVersion(execution, testCase, suite);
+                    added++;
+                }
+            }
+        }
+        if (added == 0) {
+            throw new InvalidRequestException("추가할 새 테스트케이스가 없습니다 — 선택한 스위트의 케이스가 이미 모두 포함되어 있습니다.");
+        }
+        refreshSuiteSnapshot(execution);
+        auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.UPDATED,
+                "테스트런 '" + execution.getName() + "'에 스위트 " + suites.size() + "개(" + added + "건)를 추가했습니다.");
+        return detailWithDefects(execution);
+    }
+
+    /** 테스트런에서 특정 출처 스위트에서 온 항목을 모두 제거한다 — 마지막 남은 스위트는 제거할 수 없다(런을 비우지 않기 위함). */
+    @Transactional
+    public ExecutionResponse removeSuiteFromExecution(Long id, Long suiteId) {
+        Execution execution = findById(id);
+        if (execution.getStatus().isCompleted()) {
+            throw new InvalidRequestException("완료된 테스트런에서는 스위트를 제거할 수 없습니다. 먼저 다시 열어 주세요.");
+        }
+        List<ExecutionItem> toRemove = execution.getItems().stream()
+                .filter(it -> java.util.Objects.equals(it.getSourceSuiteId(), suiteId))
+                .toList();
+        if (toRemove.isEmpty()) {
+            throw new InvalidRequestException("이 테스트런에는 해당 스위트에서 온 항목이 없습니다.");
+        }
+        if (toRemove.size() == execution.getItems().size()) {
+            throw new InvalidRequestException("마지막 스위트는 제거할 수 없습니다. 테스트런 자체를 삭제해 주세요.");
+        }
+        String removedSuiteName = toRemove.get(0).getSourceSuiteName();
+        // 제거되는 항목에 달린 첨부(실패 증거 등)를 먼저 정리한다 — 고아 파일 방지.
+        for (ExecutionItem item : toRemove) {
+            attachmentService.deleteAllByEntity(AttachmentEntityType.EXECUTION_ITEM, item.getId());
+        }
+        execution.getItems().removeAll(toRemove);
+        refreshSuiteSnapshot(execution);
+        auditLogService.log(AuditLogService.TEST_RUN, id, AuditAction.UPDATED,
+                "테스트런 '" + execution.getName() + "'에서 스위트 '"
+                        + (removedSuiteName != null ? removedSuiteName : suiteId) + "'(" + toRemove.size() + "건)를 제거했습니다.");
+        return detailWithDefects(execution);
+    }
+
+    /**
+     * 현재 항목들의 출처 스위트를 훑어 런의 스위트 스냅샷(testSuiteId / suiteName)을 다시 맞춘다.
+     * 스위트 1개면 그 id·이름을, 여러 개면 이름을 이어 붙이고 id는 비운다. 출처 스위트가 하나도 남지 않으면
+     * (케이스를 직접 선택해 만든 런이거나, 붙였던 스위트를 모두 제거한 경우) 스냅샷을 비운다.
+     */
+    private void refreshSuiteSnapshot(Execution execution) {
+        java.util.LinkedHashMap<Long, String> suiteById = new java.util.LinkedHashMap<>();
+        for (ExecutionItem item : execution.getItems()) {
+            if (item.getSourceSuiteId() != null) {
+                suiteById.putIfAbsent(item.getSourceSuiteId(), item.getSourceSuiteName());
+            }
+        }
+        if (suiteById.isEmpty()) {
+            execution.updateSuiteSnapshot(null, null);
+        } else if (suiteById.size() == 1) {
+            Map.Entry<Long, String> only = suiteById.entrySet().iterator().next();
+            execution.updateSuiteSnapshot(only.getKey(), truncate(only.getValue(), 200));
+        } else {
+            String joined = suiteById.values().stream()
+                    .map(n -> n != null ? n : "이름 없는 스위트")
+                    .collect(Collectors.joining(", "));
+            execution.updateSuiteSnapshot(null, truncate(joined, 200));
+        }
     }
 
     @Transactional
@@ -407,7 +531,7 @@ public class ExecutionService {
         auditLogService.log(AuditLogService.TEST_RUN, executionId, AuditAction.RESULT_RECORDED,
                 "'" + item.getCaseTitle() + "' 결과: " + request.status()
                         + " (런 '" + execution.getName() + "')");
-        return ExecutionResponse.detail(execution);
+        return detailWithDefects(execution);
     }
 
     /** 선택한 여러 실행 아이템에 같은 결과를 한 번에 기록한다. */
@@ -433,7 +557,7 @@ public class ExecutionService {
         auditLogService.log(AuditLogService.TEST_RUN, executionId, AuditAction.RESULT_RECORDED,
                 "일괄 결과 기록: " + targetIds.size() + "건 → " + request.status()
                         + " (런 '" + execution.getName() + "')");
-        return ExecutionResponse.detail(execution);
+        return detailWithDefects(execution);
     }
 
     private Execution findById(Long id) {

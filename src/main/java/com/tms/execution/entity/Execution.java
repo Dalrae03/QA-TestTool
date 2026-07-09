@@ -116,6 +116,12 @@ public class Execution {
         this.planName = planName;
     }
 
+    /** 스위트를 추가·제거한 뒤 출처 스위트 스냅샷(단일 id/이름 또는 병합 이름)을 다시 굳힌다. */
+    public void updateSuiteSnapshot(Long testSuiteId, String suiteName) {
+        this.testSuiteId = testSuiteId;
+        this.suiteName = suiteName;
+    }
+
     public void updateEnvironment(Long testConfigurationId, String configurationName, String environmentDetail) {
         this.testConfigurationId = testConfigurationId;
         this.configurationName = configurationName;

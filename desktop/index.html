@@ -259,12 +259,18 @@
 
         <!-- ① 목록 패널 -->
         <div class="tc-panel show" id="tcp-list">
+          <!-- 일괄 처리 바 (케이스 선택 시 표시) -->
+          <div id="tcBulkBar" class="tc-bulk-bar" hidden>
+            <span id="tcBulkCount" class="tc-bulk-count">0개 선택됨</span>
+            <button type="button" class="btn btn-sm btn-danger" id="tcBulkDeleteBtn">🗑 선택 삭제</button>
+            <button type="button" class="btn btn-sm" id="tcBulkClearBtn">선택 해제</button>
+          </div>
           <div class="tc-list-scroll">
             <div id="listState" class="list-state-msg" style="display:none"></div>
             <table class="ctbl">
-              <colgroup><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:80px"><col style="width:90px"></colgroup>
+              <colgroup><col style="width:34px"><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:80px"><col style="width:90px"></colgroup>
               <thead>
-                <tr><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>버전</th><th>수정일</th></tr>
+                <tr><th><input type="checkbox" id="tcSelectAll" title="현재 목록 전체 선택"></th><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>버전</th><th>수정일</th></tr>
               </thead>
               <tbody id="testCaseList"></tbody>
             </table>
@@ -759,6 +765,7 @@
             <button type="button" class="btn btn-sm" id="runStatsButton" aria-pressed="false">📈 진척도·통계</button>
             <button type="button" class="btn btn-sm" id="runCompleteButton">완료 처리</button>
             <button type="button" class="btn btn-sm" id="runReportButton">📊 엑셀 리포트</button>
+            <button type="button" class="btn btn-sm" id="runAddSuiteButton">＋ 스위트 추가</button>
             <button type="button" class="btn btn-sm" id="runCloneButton">복제</button>
             <button type="button" class="btn btn-sm btn-danger" id="runDeleteButton">삭제</button>
           </div>
@@ -820,6 +827,21 @@
   </div>
 </div>
 
+<!-- 스위트 추가 모달 (기존 테스트런에 스위트 붙이기) -->
+<div id="addSuiteModal" class="modal-overlay" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="addSuiteModalTitle" style="width:520px;max-height:85vh;overflow-y:auto">
+    <div class="modal-head"><div class="modal-title" id="addSuiteModalTitle">스위트 추가</div><button type="button" class="modal-close" id="addSuiteCloseButton" aria-label="닫기">×</button></div>
+    <div class="form-field">
+      <span>이 테스트런에 추가할 스위트를 선택하세요 (이미 포함된 테스트케이스는 자동으로 제외됩니다)</span>
+      <div id="addSuiteCheckList" class="tc-picker-tree" style="max-height:260px"></div>
+    </div>
+    <div class="plan-form-actions">
+      <button type="button" class="btn btn-sm" id="addSuiteCancelButton">취소</button>
+      <button type="button" class="btn btn-sm btn-pri" id="addSuiteConfirmButton">추가</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ 5. 연결 설정 ══ -->
 <div class="app-view" id="view-settings">
   <div class="view-hd">
@@ -836,6 +858,23 @@
           <input id="apiBaseUrl" type="url" class="form-input" placeholder="http://localhost:8080">
           <button id="connectButton" class="btn btn-sm btn-pri">연결 확인</button>
         </div>
+      </div>
+      <div class="set-card">
+        <h3>Jira 연동</h3>
+        <p>결함·요구사항을 Jira와 연동합니다. Atlassian 계정 이메일과 <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener">API 토큰</a>이 필요합니다.</p>
+        <div class="jira-settings-form">
+          <label class="form-field"><span>Base URL *</span><input id="jiraBaseUrl" type="url" class="form-input" placeholder="https://your-domain.atlassian.net"></label>
+          <label class="form-field"><span>이메일 *</span><input id="jiraEmail" type="email" class="form-input" placeholder="you@example.com"></label>
+          <label class="form-field"><span>API 토큰 *</span><input id="jiraApiToken" type="password" class="form-input" placeholder="저장된 토큰이 있으면 비워 두면 유지됩니다" autocomplete="off"></label>
+          <label class="form-field"><span>프로젝트 키 *</span><input id="jiraProjectKey" class="form-input" placeholder="예: TMS" maxlength="50"></label>
+          <label class="form-field"><span>TMS 웹 주소 (선택)</span><input id="jiraWebBaseUrl" type="url" class="form-input" placeholder="Jira에 역링크를 남길 TMS 주소 (선택)"></label>
+          <label class="configuration-active"><input id="jiraEnabled" type="checkbox" checked> 연동 사용</label>
+        </div>
+        <div class="conn-row" style="margin-top:10px">
+          <button id="jiraTestButton" type="button" class="btn btn-sm">🔌 연결 테스트</button>
+          <button id="jiraSaveButton" type="button" class="btn btn-sm btn-pri">저장</button>
+        </div>
+        <div id="jiraSettingsStatus" class="jira-settings-status" style="display:none"></div>
       </div>
       <div class="set-card">
         <h3>프로그램 정보</h3>

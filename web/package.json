@@ -1,0 +1,18 @@
+{
+  "name": "tms-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TMS 웹 버전 — Vercel 배포 + Supabase 백엔드",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

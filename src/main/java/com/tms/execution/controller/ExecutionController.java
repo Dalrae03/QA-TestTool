@@ -1,5 +1,6 @@
 package com.tms.execution.controller;
 
+import com.tms.execution.dto.AddSuitesToExecutionRequest;
 import com.tms.execution.dto.BulkRecordResultRequest;
 import com.tms.execution.dto.CreateExecutionRequest;
 import com.tms.execution.dto.ExecutionResponse;
@@ -93,6 +94,16 @@ public class ExecutionController {
             @Valid @RequestBody BulkRecordResultRequest request
     ) {
         return executionService.bulkRecordResult(id, request);
+    }
+
+    @PostMapping("/{id}/suites")
+    public ExecutionResponse addSuites(@PathVariable Long id, @Valid @RequestBody AddSuitesToExecutionRequest request) {
+        return executionService.addSuitesToExecution(id, request);
+    }
+
+    @DeleteMapping("/{id}/suites/{suiteId}")
+    public ExecutionResponse removeSuite(@PathVariable Long id, @PathVariable Long suiteId) {
+        return executionService.removeSuiteFromExecution(id, suiteId);
     }
 
     @DeleteMapping("/{id}")

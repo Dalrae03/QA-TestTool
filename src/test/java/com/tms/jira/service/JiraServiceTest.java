@@ -15,7 +15,7 @@ import com.tms.defect.entity.DefectStatus;
 import com.tms.defect.repository.DefectRepository;
 import com.tms.global.exception.InvalidRequestException;
 import com.tms.jira.client.JiraClient;
-import com.tms.jira.config.JiraProperties;
+import com.tms.jira.config.JiraConfig;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.JiraSyncResult;
 import jakarta.persistence.EntityNotFoundException;
@@ -32,7 +32,7 @@ class JiraServiceTest {
 
     @Mock DefectRepository defectRepository;
     @Mock JiraClient jiraClient;
-    @Mock JiraProperties jiraProperties;
+    @Mock JiraSettingsService settingsService;
     @InjectMocks JiraService jiraService;
 
     @Test
@@ -40,6 +40,8 @@ class JiraServiceTest {
         Defect defect = new Defect("로그인 버그", "재현 방법", DefectSeverity.CRITICAL, DefectStatus.OPEN, null);
         given(defectRepository.findById(1L)).willReturn(Optional.of(defect));
         given(jiraClient.createIssue(any(), any(), any(), any())).willReturn("TMS-42");
+        // 새 이슈 생성 후 역링크 시도 — 웹 주소 미설정이면 역링크는 건너뛴다.
+        given(settingsService.current()).willReturn(JiraConfig.empty());
 
         DefectResponse response = jiraService.push(1L);
 

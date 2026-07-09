@@ -6,6 +6,7 @@ import com.tms.execution.entity.ExecutionStatus;
 import com.tms.execution.entity.ResultStatus;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 public record ExecutionResponse(
         Long id,
@@ -38,9 +39,11 @@ public record ExecutionResponse(
         return build(execution, null);
     }
 
-    /** 상세용 — items 포함. */
-    public static ExecutionResponse detail(Execution execution) {
-        return build(execution, execution.getItems().stream().map(ExecutionItemResponse::from).toList());
+    /** 상세용 — items 포함. defectCounts: testCaseId → 연결된 결함 수 (없으면 0으로 처리). */
+    public static ExecutionResponse detail(Execution execution, Map<Long, Integer> defectCounts) {
+        return build(execution, execution.getItems().stream()
+                .map(item -> ExecutionItemResponse.from(item, defectCounts))
+                .toList());
     }
 
     private static ExecutionResponse build(Execution execution, List<ExecutionItemResponse> items) {
