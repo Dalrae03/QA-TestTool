@@ -3,7 +3,7 @@ package com.tms.jira.service;
 import com.tms.audit.entity.AuditAction;
 import com.tms.audit.service.AuditLogService;
 import com.tms.jira.client.JiraClient;
-import com.tms.jira.config.JiraProperties;
+import com.tms.jira.config.JiraConfig;
 import com.tms.jira.dto.JiraIssueInfo;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.RequirementCoverageResponse;
@@ -30,18 +30,18 @@ public class JiraTraceabilityService {
 
     private final TestCaseRepository testCaseRepository;
     private final JiraClient jiraClient;
-    private final JiraProperties jiraProperties;
+    private final JiraSettingsService settingsService;
     private final AuditLogService auditLogService;
 
     public JiraTraceabilityService(
             TestCaseRepository testCaseRepository,
             JiraClient jiraClient,
-            JiraProperties jiraProperties,
+            JiraSettingsService settingsService,
             AuditLogService auditLogService
     ) {
         this.testCaseRepository = testCaseRepository;
         this.jiraClient = jiraClient;
-        this.jiraProperties = jiraProperties;
+        this.settingsService = settingsService;
         this.auditLogService = auditLogService;
     }
 
@@ -103,10 +103,11 @@ public class JiraTraceabilityService {
 
     /** TMS 웹 주소가 설정돼 있으면 Jira 이슈에 TMS 테스트케이스를 가리키는 원격 링크를 남긴다(best-effort). */
     private void createRemoteLink(TestCase testCase, String jiraKey) {
-        if (!jiraProperties.hasWebBaseUrl()) {
+        JiraConfig cfg = settingsService.current();
+        if (!cfg.hasWebBaseUrl()) {
             return;
         }
-        String url = jiraProperties.webBaseUrl().replaceAll("/+$", "") + "/testcases/" + testCase.getId();
+        String url = cfg.webBaseUrl().replaceAll("/+$", "") + "/testcases/" + testCase.getId();
         String title = "TMS TC-" + testCase.getId() + ": " + testCase.getTitle();
         try {
             jiraClient.addRemoteLink(jiraKey, url, title);

@@ -10,7 +10,7 @@ import static org.mockito.Mockito.never;
 import com.tms.audit.entity.AuditAction;
 import com.tms.audit.service.AuditLogService;
 import com.tms.jira.client.JiraClient;
-import com.tms.jira.config.JiraProperties;
+import com.tms.jira.config.JiraConfig;
 import com.tms.jira.dto.JiraIssueInfo;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.RequirementCoverageResponse;
@@ -33,7 +33,7 @@ class JiraTraceabilityServiceTest {
 
     @Mock TestCaseRepository testCaseRepository;
     @Mock JiraClient jiraClient;
-    @Mock JiraProperties jiraProperties;
+    @Mock JiraSettingsService settingsService;
     @Mock AuditLogService auditLogService;
     @InjectMocks JiraTraceabilityService service;
 
@@ -58,6 +58,7 @@ class JiraTraceabilityServiceTest {
         TestCase testCase = newTestCase("로그인 테스트");
         given(testCaseRepository.findById(1L)).willReturn(Optional.of(testCase));
         given(jiraClient.getIssue("PROJ-1")).willReturn(issue("PROJ-1"));
+        given(settingsService.current()).willReturn(JiraConfig.empty());
 
         TestCaseRequirementsResponse response = service.linkRequirement(1L, new JiraLinkRequest("PROJ-1"));
 
@@ -85,8 +86,8 @@ class JiraTraceabilityServiceTest {
         TestCase testCase = newTestCase("로그인 테스트");
         given(testCaseRepository.findById(1L)).willReturn(Optional.of(testCase));
         given(jiraClient.getIssue("PROJ-1")).willReturn(issue("PROJ-1"));
-        given(jiraProperties.hasWebBaseUrl()).willReturn(true);
-        given(jiraProperties.webBaseUrl()).willReturn("https://tms.example.com/");
+        given(settingsService.current()).willReturn(
+                new JiraConfig(null, null, null, null, "https://tms.example.com/"));
 
         service.linkRequirement(1L, new JiraLinkRequest("PROJ-1"));
 

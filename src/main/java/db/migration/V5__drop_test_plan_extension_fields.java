@@ -35,8 +35,24 @@ public class V5__drop_test_plan_extension_fields extends BaseJavaMigration {
             }
         }
 
-        if (!statusEnumHasAllValues(conn)) {
+        String statusType = statusColumnType(conn);
+        if (statusType == null) {
+            return; // status 컬럼이 아직 없음(신규 설치) — ddl-auto가 최종 값 목록으로 생성한다.
+        }
+        boolean hasLegacyValues = statusType.contains("ACTIVE") || statusType.contains("ARCHIVED");
+        boolean hasNewValues = statusType.contains("IN_REVIEW");
+        if (hasLegacyValues || !hasNewValues) {
             try (Statement st = conn.createStatement()) {
+                // 1) 구·신 값을 모두 허용하도록 임시로 넓힌다 — 기존 행을 remap하기 전에
+                //    바로 최종 목록으로 좁히면 ACTIVE/ARCHIVED 행이 truncate되거나 ALTER가 실패한다.
+                st.executeUpdate(
+                        "ALTER TABLE test_plans MODIFY COLUMN status " +
+                        "ENUM('DRAFT','ACTIVE','COMPLETED','ARCHIVED'," +
+                        "'IN_REVIEW','APPROVED','IN_PROGRESS','ON_HOLD','CANCELLED') NOT NULL");
+                // 2) 제거되는 구 값을 신 값으로 remap (ACTIVE→진행중, ARCHIVED→완료)
+                st.executeUpdate("UPDATE test_plans SET status = 'IN_PROGRESS' WHERE status = 'ACTIVE'");
+                st.executeUpdate("UPDATE test_plans SET status = 'COMPLETED' WHERE status = 'ARCHIVED'");
+                // 3) 최종 값 목록으로 좁힌다
                 st.executeUpdate(
                         "ALTER TABLE test_plans MODIFY COLUMN status " +
                         "ENUM('DRAFT','IN_REVIEW','APPROVED','IN_PROGRESS','COMPLETED','ON_HOLD','CANCELLED') NOT NULL");
@@ -60,19 +76,19 @@ public class V5__drop_test_plan_extension_fields extends BaseJavaMigration {
         }
     }
 
-    private boolean statusEnumHasAllValues(Connection conn) {
+    /** status 컬럼의 COLUMN_TYPE 문자열(예: "enum('DRAFT','ACTIVE',...)")을 반환. 컬럼이 없으면 null. */
+    private String statusColumnType(Connection conn) {
         try (PreparedStatement ps = conn.prepareStatement(
                 "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS " +
                 "WHERE TABLE_SCHEMA = DATABASE() " +
                 "  AND TABLE_NAME = 'test_plans' " +
                 "  AND COLUMN_NAME = 'status'")) {
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return true; // 컬럼이 없으면(신규 설치, ddl-auto가 곧 생성) 손대지 않는다.
-                String columnType = rs.getString(1);
-                return columnType != null && columnType.contains("IN_REVIEW");
+                if (!rs.next()) return null; // 컬럼이 없으면(신규 설치, ddl-auto가 곧 생성) 손대지 않는다.
+                return rs.getString(1);
             }
         } catch (Exception e) {
-            return true;
+            return null;
         }
     }
 }

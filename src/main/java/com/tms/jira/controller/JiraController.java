@@ -1,11 +1,16 @@
 package com.tms.jira.controller;
 
 import com.tms.defect.dto.DefectResponse;
+import com.tms.jira.client.JiraClient;
+import com.tms.jira.dto.JiraConnectionTestResult;
 import com.tms.jira.dto.JiraLinkRequest;
+import com.tms.jira.dto.JiraSettingsRequest;
+import com.tms.jira.dto.JiraSettingsView;
 import com.tms.jira.dto.JiraSyncResult;
 import com.tms.jira.dto.RequirementCoverageResponse;
 import com.tms.jira.dto.TestCaseRequirementsResponse;
 import com.tms.jira.service.JiraService;
+import com.tms.jira.service.JiraSettingsService;
 import com.tms.jira.service.JiraTraceabilityService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,10 +27,35 @@ public class JiraController {
 
     private final JiraService jiraService;
     private final JiraTraceabilityService traceabilityService;
+    private final JiraSettingsService settingsService;
+    private final JiraClient jiraClient;
 
-    public JiraController(JiraService jiraService, JiraTraceabilityService traceabilityService) {
+    public JiraController(JiraService jiraService, JiraTraceabilityService traceabilityService,
+                          JiraSettingsService settingsService, JiraClient jiraClient) {
         this.jiraService = jiraService;
         this.traceabilityService = traceabilityService;
+        this.settingsService = settingsService;
+        this.jiraClient = jiraClient;
+    }
+
+    // ===== Jira 연동 설정 =====
+
+    /** 현재 Jira 연동 설정 조회(토큰은 마스킹). */
+    @GetMapping("/api/jira/settings")
+    public ResponseEntity<JiraSettingsView> getSettings() {
+        return ResponseEntity.ok(settingsService.view());
+    }
+
+    /** Jira 연동 설정 저장. */
+    @PutMapping("/api/jira/settings")
+    public ResponseEntity<JiraSettingsView> saveSettings(@Valid @RequestBody JiraSettingsRequest request) {
+        return ResponseEntity.ok(settingsService.save(request));
+    }
+
+    /** 입력한(또는 저장된) 설정으로 실제 Jira 연결을 테스트. */
+    @PostMapping("/api/jira/settings/test")
+    public ResponseEntity<JiraConnectionTestResult> testConnection(@RequestBody(required = false) JiraSettingsRequest request) {
+        return ResponseEntity.ok(jiraClient.testConnection(settingsService.resolveForTest(request)));
     }
 
     /** TMS 결함 → Jira 이슈 생성 또는 업데이트 */

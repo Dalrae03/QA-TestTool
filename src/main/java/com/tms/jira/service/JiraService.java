@@ -7,7 +7,7 @@ import com.tms.defect.entity.DefectStatus;
 import com.tms.defect.repository.DefectRepository;
 import com.tms.global.exception.InvalidRequestException;
 import com.tms.jira.client.JiraClient;
-import com.tms.jira.config.JiraProperties;
+import com.tms.jira.config.JiraConfig;
 import com.tms.jira.dto.JiraLinkRequest;
 import com.tms.jira.dto.JiraSyncResult;
 import jakarta.persistence.EntityNotFoundException;
@@ -21,12 +21,12 @@ public class JiraService {
 
     private final DefectRepository defectRepository;
     private final JiraClient jiraClient;
-    private final JiraProperties jiraProperties;
+    private final JiraSettingsService settingsService;
 
-    public JiraService(DefectRepository defectRepository, JiraClient jiraClient, JiraProperties jiraProperties) {
+    public JiraService(DefectRepository defectRepository, JiraClient jiraClient, JiraSettingsService settingsService) {
         this.defectRepository = defectRepository;
         this.jiraClient = jiraClient;
-        this.jiraProperties = jiraProperties;
+        this.settingsService = settingsService;
     }
 
     /** TMS 결함 → Jira 이슈 생성(또는 업데이트). jiraKey 저장 */
@@ -105,10 +105,11 @@ public class JiraService {
 
     /** TMS 웹 주소가 설정돼 있으면 Jira 이슈에 TMS 결함을 가리키는 원격 링크를 남긴다(best-effort). */
     private void createRemoteLink(Defect defect) {
-        if (!jiraProperties.hasWebBaseUrl() || defect.getJiraKey() == null) {
+        JiraConfig cfg = settingsService.current();
+        if (!cfg.hasWebBaseUrl() || defect.getJiraKey() == null) {
             return;
         }
-        String url = jiraProperties.webBaseUrl().replaceAll("/+$", "") + "/defects/" + defect.getId();
+        String url = cfg.webBaseUrl().replaceAll("/+$", "") + "/defects/" + defect.getId();
         String title = "TMS 결함 #" + defect.getId() + ": " + defect.getTitle();
         try {
             jiraClient.addRemoteLink(defect.getJiraKey(), url, title);

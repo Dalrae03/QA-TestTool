@@ -193,6 +193,11 @@ public class TestPlan {
         this.deliverables = deliverables;
     }
 
+    /** 핵심 테스트 대상에서 특정 테스트케이스를 제거 — 테스트케이스 삭제 시 조인 테이블 정리에 사용. */
+    public void removeCoreTestCase(Long testCaseId) {
+        this.coreTestCases.removeIf(tc -> tc.getId().equals(testCaseId));
+    }
+
     /** 3.1 핵심 테스트 대상 갱신 — delta 방식(Hibernate INSERT-before-DELETE 회피), TestSuite.replaceTestCases와 동일 패턴. */
     public void replaceCoreTestCases(List<TestCase> newTestCases) {
         List<TestCase> newList = newTestCases != null ? newTestCases : List.of();
