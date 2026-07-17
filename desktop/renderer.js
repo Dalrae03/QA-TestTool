@@ -372,6 +372,158 @@ function isDescendant(potentialParentId, folderId) {
   }
   return false;
 }
+// ── TC 피커(스위트/테스트런/테스트플랜) 공용 폴더 트리 ──────────────
+// 세 곳 모두 "필터링된 TC + 그 TC가 속한 폴더의 상위 폴더 전체"를 실제 폴더 계층 그대로
+// 중첩해서 보여준다(사이드바 폴더 트리와 동일한 토글-펼침 방식).
+
+// tcs가 속한 폴더들과 그 조상 폴더를 모두 모아 부모→자식 맵을 만든다.
+// childrenOf.get(null) = 최상위(루트) 폴더들, childrenOf.get(folderId) = 그 폴더의 직계 하위 폴더들.
+function _buildTcPickerFolderTree(tcs) {
+  const byFolder = new Map();   // folderId -> tc[] (그 폴더에 직접 속한 TC)
+  const noFolder = [];
+  for (const tc of tcs) {
+    if (tc.folderId) {
+      if (!byFolder.has(tc.folderId)) byFolder.set(tc.folderId, []);
+      byFolder.get(tc.folderId).push(tc);
+    } else {
+      noFolder.push(tc);
+    }
+  }
+
+  const included = new Set();
+  for (const fid of byFolder.keys()) {
+    let cur = state.folders.find(f => f.id === fid);
+    while (cur && !included.has(cur.id)) {
+      included.add(cur.id);
+      cur = cur.parentId ? state.folders.find(f => f.id === cur.parentId) : null;
+    }
+  }
+
+  const childrenOf = new Map();
+  for (const fid of included) {
+    const folder = state.folders.find(f => f.id === fid);
+    const parentKey = folder.parentId && included.has(folder.parentId) ? folder.parentId : null;
+    if (!childrenOf.has(parentKey)) childrenOf.set(parentKey, []);
+    childrenOf.get(parentKey).push(folder);
+  }
+  for (const arr of childrenOf.values()) arr.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+
+  return { childrenOf, byFolder, noFolder };
+}
+
+// folderId 하위(자기 자신 + 모든 하위 폴더)에 속한, 현재 필터링된 TC id 전체.
+function _collectTcPickerFolderIds(folderId, tree) {
+  const ids = (tree.byFolder.get(folderId) || []).map(t => t.id);
+  for (const child of tree.childrenOf.get(folderId) || []) {
+    ids.push(..._collectTcPickerFolderIds(child.id, tree));
+  }
+  return ids;
+}
+
+// 폴더 트리를 그대로 중첩해서 그린다. 폴더 헤더를 토글하면 그 안의 하위 폴더·TC가 들여쓰기된 채로
+// 나타나고, 폴더 체크박스는 하위 폴더까지 포함한 전체 TC를 한 번에 선택/해제한다.
+// containerId: 렌더링할 DOM id, tcs: 필터링된 TC 목록, selectedIds: Set<number> 선택 상태(피커별 공유),
+// collapsedSet: Set(folderId | "__unclassified__") 접힘 상태(피커별로 별도 유지), onChange: 렌더 후 호출할 콜백(개수 표시 등).
+function _renderTcPickerFolderTree(containerId, tcs, selectedIds, collapsedSet, onChange) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const scrollTop = container.scrollTop;
+
+  if (tcs.length === 0) {
+    container.innerHTML = '<div class="tc-picker-empty">조건에 맞는 테스트케이스가 없습니다.</div>';
+    onChange();
+    return;
+  }
+
+  const tree = _buildTcPickerFolderTree(tcs);
+  const rerender = () => _renderTcPickerFolderTree(containerId, tcs, selectedIds, collapsedSet, onChange);
+
+  function renderTcRow(tc, depth) {
+    const row = document.createElement("div");
+    row.className = "tc-picker-tc";
+    row.style.paddingLeft = `${10 + depth * 16}px`;
+    const priCls = { HIGH: "b-hi", MEDIUM: "b-mid", LOW: "b-lo" }[tc.priority] || "b-mid";
+    row.innerHTML = `
+      <input type="checkbox" ${selectedIds.has(tc.id) ? "checked" : ""}>
+      <div class="tc-picker-tc-info">
+        <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3, "0")} ${escapeHtml(tc.title)}</div>
+        <div class="tc-picker-tc-badges">
+          <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
+          <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
+        </div>
+      </div>`;
+    const chk = row.querySelector("input");
+    const toggle = e => {
+      e.stopPropagation();
+      if (selectedIds.has(tc.id)) selectedIds.delete(tc.id); else selectedIds.add(tc.id);
+      rerender();
+    };
+    row.addEventListener("click", toggle);
+    chk.addEventListener("click", toggle);
+    return row;
+  }
+
+  function renderFolderHeader(name, allIds, depth, isCollapsed, onToggleCollapse) {
+    const header = document.createElement("div");
+    header.className = "tc-picker-folder" + (isCollapsed ? " collapsed" : "");
+    header.style.paddingLeft = `${10 + depth * 16}px`;
+    const selCount = allIds.filter(tcId => selectedIds.has(tcId)).length;
+    const allSel = allIds.length > 0 && selCount === allIds.length;
+    const someSel = selCount > 0 && !allSel;
+    header.innerHTML = `
+      <input type="checkbox" class="tc-picker-folder-chk" ${allSel ? "checked" : ""}>
+      <span class="tc-picker-folder-arrow">▼</span>
+      <span>📁 ${escapeHtml(name)}</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${allIds.length}건</span>`;
+    const folderChk = header.querySelector(".tc-picker-folder-chk");
+    folderChk.indeterminate = someSel;
+    folderChk.addEventListener("click", e => {
+      e.stopPropagation();
+      const shouldSelect = !allSel;
+      allIds.forEach(tcId => (shouldSelect ? selectedIds.add(tcId) : selectedIds.delete(tcId)));
+      rerender();
+    });
+    header.addEventListener("click", e => {
+      if (e.target === folderChk) return;
+      onToggleCollapse();
+      rerender();
+    });
+    return header;
+  }
+
+  function renderFolderNode(folder, depth) {
+    const wrap = document.createElement("div");
+    const allIds = _collectTcPickerFolderIds(folder.id, tree);
+    const isCollapsed = collapsedSet.has(folder.id);
+    wrap.appendChild(renderFolderHeader(folder.name, allIds, depth, isCollapsed, () => {
+      if (isCollapsed) collapsedSet.delete(folder.id); else collapsedSet.add(folder.id);
+    }));
+    if (!isCollapsed) {
+      for (const child of tree.childrenOf.get(folder.id) || []) wrap.appendChild(renderFolderNode(child, depth + 1));
+      for (const tc of tree.byFolder.get(folder.id) || []) wrap.appendChild(renderTcRow(tc, depth + 1));
+    }
+    return wrap;
+  }
+
+  container.innerHTML = "";
+  for (const folder of tree.childrenOf.get(null) || []) {
+    container.appendChild(renderFolderNode(folder, 0));
+  }
+  if (tree.noFolder.length) {
+    const isCollapsed = collapsedSet.has("__unclassified__");
+    const wrap = document.createElement("div");
+    const ids = tree.noFolder.map(t => t.id);
+    wrap.appendChild(renderFolderHeader("미분류", ids, 0, isCollapsed, () => {
+      if (isCollapsed) collapsedSet.delete("__unclassified__"); else collapsedSet.add("__unclassified__");
+    }));
+    if (!isCollapsed) tree.noFolder.forEach(tc => wrap.appendChild(renderTcRow(tc, 1)));
+    container.appendChild(wrap);
+  }
+
+  container.scrollTop = scrollTop;
+  onChange();
+}
+
 function getFolderTcCount(folderId) {
   const allIds = [folderId, ...getAllSubFolderIds(folderId)];
   return state.testCases.filter(tc => allIds.includes(state.folderAssignments[String(tc.id)])).length;
@@ -476,6 +628,9 @@ function addSubFolder(parentId) {
 // ── 폴더 삭제 ─────────────────────────────────────────────────────
 
 async function deleteFolder(folderId) {
+  // 직전의 TC 폴더 이동(드래그 이동)이 아직 서버에 반영되기 전이면 먼저 기다린다.
+  // 그렇지 않으면 아래 loadTestCases()가 옛 폴더 배정을 다시 불러와 "이동이 되돌아간" 것처럼 보인다.
+  await waitForPendingTcMoves();
   const toDelete = [folderId, ...getAllSubFolderIds(folderId)];
 
   // 폴더(및 하위 폴더)에 속한 TC들을 먼저 찾는다 — 이 케이스들은 폴더와 함께 삭제된다.
@@ -568,7 +723,59 @@ const _folderCtxMenu = (() => {
 // ── 폴더 이동 ─────────────────────────────────────────────────────
 
 let _dragFolderId = null;
-let _dragTcId     = null;   // 드래그 중인 테스트케이스 id
+let _dragTcIds    = [];   // 드래그 중인 테스트케이스 id 목록 (다중 선택 드래그 시 여러 개)
+let _tcSelectionAnchor = null;   // Shift+클릭 범위 선택의 기준(anchor) TC id — 목록/사이드바 공통
+let _sidebarTcOrder = [];        // 사이드바 폴더 트리에 그려진 TC id 순서(Shift 범위 선택용). renderFolderTree()가 매 렌더링마다 초기화한다.
+
+// anchor ~ targetId 구간에 있는 TC id를 모두 state.tcSelection에 추가한다(OS 파일 탐색기의 Shift+클릭과 동일).
+// order: 현재 화면에 그려진 TC id 순서 배열 — 목록 뷰는 _tcRowOrder, 사이드바 트리는 _sidebarTcOrder를 넘긴다.
+function _selectTcRange(targetId, order) {
+  const anchor = (_tcSelectionAnchor != null && order.includes(_tcSelectionAnchor)) ? _tcSelectionAnchor : targetId;
+  const ai = order.indexOf(anchor);
+  const ti = order.indexOf(targetId);
+  if (ai === -1 || ti === -1) { state.tcSelection.add(targetId); _tcSelectionAnchor = targetId; return; }
+  const [from, to] = ai < ti ? [ai, ti] : [ti, ai];
+  for (let i = from; i <= to; i++) state.tcSelection.add(order[i]);
+}
+
+// TC 폴더 이동 PATCH가 서버에 반영되기 전에 폴더 삭제 등 후속 작업이 stale 데이터를 덮어써
+// 이동이 "원래대로 돌아온" 것처럼 보이는 레이스 컨디션을 막기 위한 진행 중 요청 추적.
+// deleteFolder 등 state.folderAssignments를 신뢰해 서버를 재조회하는 작업은 이 목록이 빌 때까지 기다려야 한다.
+const _pendingTcMoves = new Set();
+async function waitForPendingTcMoves() {
+  while (_pendingTcMoves.size > 0) await Promise.all([..._pendingTcMoves]);
+}
+
+// 여러 개의 테스트케이스를 한 번에 폴더로 이동한다. folderId가 null이면 미분류로 이동.
+async function _moveDraggedTcsToFolder(folderId) {
+  const ids = [..._dragTcIds];
+  _dragTcIds = [];
+  if (ids.length === 0) return;
+  const folder = folderId ? state.folders.find(f => f.id === folderId) : null;
+  const label = folder ? `'${folder.name}' 폴더로` : "미분류로";
+  ids.forEach(tid => {
+    if (folderId) state.folderAssignments[String(tid)] = folderId;
+    else delete state.folderAssignments[String(tid)];
+    // state.folderAssignments는 loadFolders()가 호출될 때마다 tc.folderId로부터 다시 만들어지므로
+    // (_rebuildFolderAssignments), 원본 TC 객체의 folderId도 함께 갱신해야 이후 재조회 시 되돌아가지 않는다.
+    const tc = state.allTestCases.find(t => t.id === tid);
+    if (tc) tc.folderId = folderId || null;
+    if (state.testCases !== state.allTestCases) {
+      const tc2 = state.testCases.find(t => t.id === tid);
+      if (tc2) tc2.folderId = folderId || null;
+    }
+    _syncEditorFolder(tid, folderId || "");
+    state.tcSelection.delete(tid);
+  });
+  persistFolders();
+  renderFolderTree(); renderList();
+  _toast(`${ids.length > 1 ? ids.length + "건이 " : ""}${label} 이동됐습니다.`);
+  const persistPromise = Promise.all(ids.map(tid =>
+    request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: folderId || null }) }).catch(() => {})
+  ));
+  _pendingTcMoves.add(persistPromise);
+  try { await persistPromise; } finally { _pendingTcMoves.delete(persistPromise); }
+}
 
 function _clearFolderDrop() {
   document.querySelectorAll("#folderTree .drop-line").forEach(l => l.classList.remove("show"));
@@ -613,6 +820,7 @@ async function moveFolderInto(srcId, tgtId) {
 function renderFolderTree() {
   const container = document.getElementById("folderTree");
   container.innerHTML = "";
+  _sidebarTcOrder = [];
   const isSearching = Boolean(state.folderSearchQuery);
   const visibleFolderIds = getVisibleFolderIdsForSearch();
   const matchesSpecialFolder = name => name.toLocaleLowerCase("ko").includes(state.folderSearchQuery);
@@ -626,11 +834,11 @@ function renderFolderTree() {
     const allNode = allWrap.querySelector(".folder-node");
     allNode.addEventListener("click", () => selectFolder("all", "전체"));
     // TC 드롭 → 미분류로 이동
-    allNode.addEventListener("dragover", e => { e.preventDefault(); if (_dragTcId) { _clearFolderDrop(); allNode.classList.add("drop-on"); } });
+    allNode.addEventListener("dragover", e => { e.preventDefault(); if (_dragTcIds.length) { _clearFolderDrop(); allNode.classList.add("drop-on"); } });
     allNode.addEventListener("dragleave", () => allNode.classList.remove("drop-on"));
     allNode.addEventListener("drop", e => {
       e.preventDefault(); allNode.classList.remove("drop-on");
-      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }).catch(() => {}); }
+      _moveDraggedTcsToFolder(null);
     });
     container.appendChild(allWrap);
   }
@@ -651,11 +859,11 @@ function renderFolderTree() {
       selectFolder("unclassified", "미분류");
     });
     // TC 드롭 → 미분류로 이동
-    unNode.addEventListener("dragover", e => { e.preventDefault(); if (_dragTcId) { _clearFolderDrop(); unNode.classList.add("drop-on"); } });
+    unNode.addEventListener("dragover", e => { e.preventDefault(); if (_dragTcIds.length) { _clearFolderDrop(); unNode.classList.add("drop-on"); } });
     unNode.addEventListener("dragleave", () => unNode.classList.remove("drop-on"));
     unNode.addEventListener("drop", e => {
       e.preventDefault(); unNode.classList.remove("drop-on");
-      if (_dragTcId) { const tid = _dragTcId; delete state.folderAssignments[String(tid)]; persistFolders(); _syncEditorFolder(tid, ""); _dragTcId = null; renderFolderTree(); renderList(); _toast("미분류로 이동됐습니다."); request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: null }) }).catch(() => {}); }
+      _moveDraggedTcsToFolder(null);
     });
     if (unHasTcs && !isSearching) {
       const unCaret = unWrap.querySelector(".folder-caret");
@@ -781,14 +989,14 @@ function _renderFolderNodes(container, parentId, depth, visibleFolderIds = null)
     // 드래그 (폴더 이동)
     if (!isSearching) {
       node.addEventListener("dragstart", e => {
-        _dragFolderId = folder.id; _dragTcId = null; e.dataTransfer.effectAllowed = "move";
+        _dragFolderId = folder.id; _dragTcIds = []; e.dataTransfer.effectAllowed = "move";
         setTimeout(() => node.classList.add("drag-active"), 0);
       });
     }
     node.addEventListener("dragover", e => {
       e.preventDefault();
       // TC 드래그 중 → 폴더 전체를 드롭 대상으로 강조
-      if (_dragTcId) {
+      if (_dragTcIds.length) {
         _clearFolderDrop(); node.classList.add("drop-on"); return;
       }
       if (_dragFolderId === folder.id) return;
@@ -802,15 +1010,8 @@ function _renderFolderNodes(container, parentId, depth, visibleFolderIds = null)
     node.addEventListener("drop", async e => {
       e.preventDefault(); _clearFolderDrop();
       // TC 드롭 → 이 폴더에 배정
-      if (_dragTcId) {
-        const tid = _dragTcId;
-        state.folderAssignments[String(tid)] = folder.id;
-        persistFolders();
-        _syncEditorFolder(tid, folder.id);
-        _dragTcId = null;
-        renderFolderTree(); renderList();
-        _toast(`'${folder.name}' 폴더로 이동됐습니다.`);
-        request(`/api/testcases/${tid}/folder`, { method: "PATCH", body: JSON.stringify({ folderId: folder.id }) }).catch(() => {});
+      if (_dragTcIds.length) {
+        await _moveDraggedTcsToFolder(folder.id);
         return;
       }
       // 폴더 이동
@@ -845,20 +1046,43 @@ function _renderTcNodes(container, folderId, depth, isUnclassified) {
   const sCls = { DRAFT:"b-draft", REVIEW_NEEDED:"b-review", READY:"b-ready", COMPLETED:"b-done" };
 
   tcs.forEach(tc => {
+    _sidebarTcOrder.push(tc.id);
     const wrap = document.createElement("div");
     wrap.className = "folder-node-wrap tc-in-folder";
     const node = document.createElement("div");
-    node.className = `folder-node tc-node ${indentClass}${tc.id === state.selectedId ? " active" : ""}`;
-    node.title = tc.title;
+    node.className = `folder-node tc-node ${indentClass}${tc.id === state.selectedId ? " active" : ""}${state.tcSelection.has(tc.id) ? " tc-node-selected" : ""}`;
+    node.dataset.tcId = String(tc.id);
+    node.title = `${tc.title}\n(Shift+클릭으로 여러 개 선택)`;
     node.draggable = true;
     node.innerHTML = `<span class="tc-drag-handle" title="드래그하여 폴더 이동">⋮⋮</span><span style="font-size:12px;flex-shrink:0">📄</span><span class="tc-node-label">${escapeHtml(tc.title)}</span><span class="badge ${sCls[tc.status]||"b-draft"} tc-status-badge">${sLbl[tc.status]||tc.status}</span>`;
-    node.addEventListener("click", async () => { await populateForm(tc); switchTcTab("detail"); });
-    // 드래그 시작
+    // 클릭: Shift(범위 선택)·Ctrl/Cmd(개별 선택 토글) 또는 상세 보기
+    node.addEventListener("click", async e => {
+      if (e.shiftKey) { e.preventDefault(); _selectTcRange(tc.id, _sidebarTcOrder); renderFolderTree(); renderList(); return; }
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        if (state.tcSelection.has(tc.id)) state.tcSelection.delete(tc.id);
+        else state.tcSelection.add(tc.id);
+        _tcSelectionAnchor = tc.id;
+        renderFolderTree(); renderList();
+        return;
+      }
+      _tcSelectionAnchor = tc.id;
+      await populateForm(tc); switchTcTab("detail");
+    });
+    // 드래그 시작 — 다중 선택 중인 노드를 드래그하면 선택된 항목을 한꺼번에 옮긴다.
     node.addEventListener("dragstart", e => {
-      _dragTcId = tc.id; _dragFolderId = null;
+      const dragIds = (state.tcSelection.has(tc.id) && state.tcSelection.size > 1)
+        ? [...state.tcSelection]
+        : [tc.id];
+      _dragTcIds = dragIds; _dragFolderId = null;
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", "tc:" + tc.id);
-      setTimeout(() => node.classList.add("drag-active"), 0);
+      e.dataTransfer.setData("text/plain", "tc:" + dragIds.join(","));
+      setTimeout(() => {
+        dragIds.forEach(id => {
+          const n = container.querySelector(`.tc-node[data-tc-id="${id}"]`);
+          if (n) n.classList.add("drag-active");
+        });
+      }, 0);
     });
     wrap.appendChild(node); container.appendChild(wrap);
   });
@@ -870,7 +1094,7 @@ document.addEventListener("dragend", () => {
   document.querySelectorAll("#folderTree .folder-node.drag-active, #suiteList .folder-node.drag-active").forEach(n => n.classList.remove("drag-active"));
   document.querySelectorAll(".tc-row-dragging").forEach(r => r.classList.remove("tc-row-dragging"));
   _dragFolderId      = null;
-  _dragTcId          = null;
+  _dragTcIds         = [];
   _dragSuiteId       = null;
   _dragSuiteFolderId = null;
 });
@@ -2388,8 +2612,13 @@ function sortTestCases(testCases) {
   });
 }
 
+// 목록에 현재 그려진 TC id 순서 — Shift+클릭 범위 선택에 사용. renderList()가 매 렌더링마다 초기화한다.
+let _tcRowOrder = [];
+
 function createTableRow(tc) {
+  _tcRowOrder.push(tc.id);
   const tr = document.createElement("tr");
+  tr.dataset.tcId = String(tc.id);
   if (tc.id === state.selectedId)    tr.classList.add("sel-row");
   if (tc.status === "REVIEW_NEEDED") tr.classList.add("attn-row");
   const env = [tc.serverEnvironment?.name,tc.os,tc.browser,tc.device].filter(Boolean);
@@ -2398,7 +2627,7 @@ function createTableRow(tc) {
   if (state.tcSelection.has(tc.id)) tr.classList.add("tc-row-selected");
   tr.innerHTML = `
     <td class="tc-select-cell"><input type="checkbox" class="tc-select"${state.tcSelection.has(tc.id) ? " checked" : ""} title="일괄 처리 선택"></td>
-    <td><span class="tc-id" title="드래그하여 폴더 이동" style="cursor:grab">⋮ TC-${String(tc.id).padStart(3,"0")}</span></td>
+    <td><span class="tc-id" title="드래그하여 폴더 이동 (Shift+클릭으로 여러 개 선택)" style="cursor:grab">⋮ TC-${String(tc.id).padStart(3,"0")}</span></td>
     <td><span class="tc-ttl">${escapeHtml(tc.title)}</span>${tc.status==="REVIEW_NEEDED"?'<span class="attn-flag">⚠ 검토 필요</span>':""}</td>
     <td>${statusBadge(tc.status)}</td>
     <td>${priorityBadge(tc.priority)}</td>
@@ -2413,21 +2642,41 @@ function createTableRow(tc) {
   selectBox.addEventListener("change", () => {
     if (selectBox.checked) state.tcSelection.add(tc.id);
     else state.tcSelection.delete(tc.id);
+    _tcSelectionAnchor = tc.id;
     tr.classList.toggle("tc-row-selected", selectBox.checked);
     renderTcBulkBar();
+    renderFolderTree();
   });
-  // 클릭: 상세 보기
-  tr.addEventListener("click", async () => { await populateForm(tc); switchTcTab("detail"); });
-  // 드래그: 폴더로 이동
+  // 클릭: Shift(범위 선택)·Ctrl/Cmd(개별 선택 토글) 또는 상세 보기
+  tr.addEventListener("click", async e => {
+    if (e.shiftKey) { e.preventDefault(); _selectTcRange(tc.id, _tcRowOrder); renderFolderTree(); renderList(); return; }
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      if (state.tcSelection.has(tc.id)) state.tcSelection.delete(tc.id);
+      else state.tcSelection.add(tc.id);
+      _tcSelectionAnchor = tc.id;
+      renderFolderTree(); renderList();
+      return;
+    }
+    _tcSelectionAnchor = tc.id;
+    await populateForm(tc); switchTcTab("detail");
+  });
+  // 드래그: 폴더로 이동 — 드래그한 행이 현재 다중 선택에 포함돼 있으면 선택된 항목을 한꺼번에 옮긴다.
   tr.addEventListener("dragstart", e => {
-    _dragTcId = tc.id; _dragFolderId = null;
+    const dragIds = (state.tcSelection.has(tc.id) && state.tcSelection.size > 1)
+      ? [...state.tcSelection]
+      : [tc.id];
+    _dragTcIds = dragIds; _dragFolderId = null;
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", "tc:" + tc.id);
-    tr.classList.add("tc-row-dragging");
+    e.dataTransfer.setData("text/plain", "tc:" + dragIds.join(","));
+    dragIds.forEach(id => {
+      const row = elements.list.querySelector(`tr[data-tc-id="${id}"]`);
+      if (row) row.classList.add("tc-row-dragging");
+    });
   });
   tr.addEventListener("dragend", () => {
-    tr.classList.remove("tc-row-dragging");
-    _dragTcId = null;
+    document.querySelectorAll(".tc-row-dragging").forEach(r => r.classList.remove("tc-row-dragging"));
+    _dragTcIds = [];
     _clearFolderDrop();
   });
   return tr;
@@ -2528,6 +2777,7 @@ function getFilteredTestCases() {
 
 function renderList() {
   elements.list.innerHTML = "";
+  _tcRowOrder = [];
   let filtered = getFilteredTestCases();
 
   // 삭제·필터로 더 이상 존재하지 않는 케이스는 선택 목록에서 정리한다.
@@ -4100,7 +4350,9 @@ async function recordExecutionItem(rowEl, clickedStatus, comment) {
     });
     state.currentExec = updated;
     const updatedItem = (updated.items || []).find(it => it.id === itemId);
-    if (updatedItem) rowEl.replaceWith(buildRunItemRow(updatedItem, false)); // 해당 행만 교체 → 스크롤·타 행 비고 보존
+    // 반드시 패치된 빌더를 써야 한다 — 원본 buildRunItemRow로 바꿔치기하면 이 행의 실패/차단/재테스트
+    // 버튼이 사유 모달을 거치지 않는 예전 동작으로 영구히 되돌아간다(다음 렌더까지).
+    if (updatedItem) rowEl.replaceWith((window._patchedBuildRunItemRow || buildRunItemRow)(updatedItem, false)); // 해당 행만 교체 → 스크롤·타 행 비고 보존
     renderRunProgress(updated);
     const idx = state.executions.findIndex(e => e.id === updated.id);
     if (idx >= 0) { state.executions[idx] = { ...state.executions[idx], ...summaryOf(updated) }; renderExecutionList(); }
@@ -4331,6 +4583,7 @@ async function createExecution() {
     if (_runSuitePickerSelectedIds.size === 0) { _toast("스위트를 1개 이상 선택하세요.", true); return; }
     payload = {
       suiteIds: [..._runSuitePickerSelectedIds],
+      testPlanId: planId,
       projectId: state.currentProjectId || null,
       testConfigurationId,
       name: document.getElementById("runNameInput").value.trim() || null,
@@ -5889,128 +6142,9 @@ function filterTcPicker() {
   renderTcPickerTree(filtered);
 }
 
+const _tcPickerCollapsed = new Set();
 function renderTcPickerTree(tcs) {
-  const tree = document.getElementById("tcPickerTree");
-  if (!tree) return;
-
-  if (tcs.length === 0) {
-    tree.innerHTML = '<div class="tc-picker-empty">조건에 맞는 테스트케이스가 없습니다.</div>';
-    updateTcPickerCount();
-    return;
-  }
-
-  // 폴더별 그룹핑
-  const groups = {};
-  const noFolder = [];
-  for (const tc of tcs) {
-    const fid = tc.folderId;
-    if (fid) {
-      if (!groups[fid]) groups[fid] = { name: tc.folderName || `폴더 ${fid}`, tcs: [] };
-      groups[fid].tcs.push(tc);
-    } else {
-      noFolder.push(tc);
-    }
-  }
-
-  const allGroups = Object.entries(groups).map(([, g]) => g);
-  if (noFolder.length) allGroups.push({ name: "미분류", tcs: noFolder });
-
-  let html = "";
-  for (const g of allGroups) {
-    const ids = g.tcs.map(t => t.id).join(",");
-    const selCount = g.tcs.filter(t => _tcPickerSelectedIds.has(t.id)).length;
-    const allSel = selCount === g.tcs.length;
-    const someSel = selCount > 0 && !allSel;
-    html += `<div class="tc-picker-folder" data-folder-tcids="${ids}">
-      <input type="checkbox" class="tc-picker-folder-chk" ${allSel ? "checked" : ""}
-        ${someSel ? "data-indeterminate='true'" : ""}
-        onclick="event.stopPropagation();toggleTcPickerFolderSelect(this)">
-      <span class="tc-picker-folder-arrow" onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">▼</span>
-      <span onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">📁 ${escapeHtml(g.name)}</span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${g.tcs.length}건</span>
-    </div>`;
-    for (const tc of g.tcs) {
-      const chk = _tcPickerSelectedIds.has(tc.id) ? "checked" : "";
-      const priCls = { HIGH:"b-hi", MEDIUM:"b-mid", LOW:"b-lo" }[tc.priority] || "b-mid";
-      html += `<div class="tc-picker-tc" onclick="toggleTcPickerItem(event,${tc.id})">
-        <input type="checkbox" ${chk} data-tcid="${tc.id}" onclick="event.stopPropagation();toggleTcPickerItem(event,${tc.id})">
-        <div class="tc-picker-tc-info">
-          <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3,"0")} ${escapeHtml(tc.title)}</div>
-          <div class="tc-picker-tc-badges">
-            <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
-            <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
-          </div>
-        </div>
-      </div>`;
-    }
-  }
-  tree.innerHTML = html;
-
-  // indeterminate 상태는 JS로만 설정 가능
-  tree.querySelectorAll(".tc-picker-folder-chk[data-indeterminate='true']").forEach(cb => {
-    cb.indeterminate = true;
-  });
-
-  updateTcPickerCount();
-}
-
-function toggleTcPickerFolder(folderEl) {
-  if (!folderEl) return;
-  folderEl.classList.toggle("collapsed");
-  const isCollapsed = folderEl.classList.contains("collapsed");
-  let sib = folderEl.nextElementSibling;
-  while (sib && sib.classList.contains("tc-picker-tc")) {
-    sib.style.display = isCollapsed ? "none" : "";
-    sib = sib.nextElementSibling;
-  }
-}
-
-function toggleTcPickerFolderSelect(chkEl) {
-  const folderEl = chkEl.closest(".tc-picker-folder");
-  if (!folderEl) return;
-  const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-  const allSelected = ids.every(id => _tcPickerSelectedIds.has(id));
-  if (allSelected) {
-    ids.forEach(id => _tcPickerSelectedIds.delete(id));
-    chkEl.checked = false;
-    chkEl.indeterminate = false;
-  } else {
-    ids.forEach(id => _tcPickerSelectedIds.add(id));
-    chkEl.checked = true;
-    chkEl.indeterminate = false;
-  }
-  // 개별 TC 체크박스 동기화
-  ids.forEach(id => {
-    const cb = document.querySelector(`.tc-picker-tc input[data-tcid="${id}"]`);
-    if (cb) cb.checked = _tcPickerSelectedIds.has(id);
-  });
-  updateTcPickerCount();
-}
-
-function toggleTcPickerItem(event, id) {
-  if (_tcPickerSelectedIds.has(id)) {
-    _tcPickerSelectedIds.delete(id);
-  } else {
-    _tcPickerSelectedIds.add(id);
-  }
-  const chk = document.querySelector(`.tc-picker-tc input[data-tcid="${id}"]`);
-  if (chk) chk.checked = _tcPickerSelectedIds.has(id);
-  // 해당 TC가 속한 폴더 체크박스 상태 업데이트
-  const tcRow = chk?.closest(".tc-picker-tc");
-  let folderEl = tcRow?.previousElementSibling;
-  while (folderEl && !folderEl.classList.contains("tc-picker-folder")) {
-    folderEl = folderEl.previousElementSibling;
-  }
-  if (folderEl) {
-    const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-    const selCount = ids.filter(i => _tcPickerSelectedIds.has(i)).length;
-    const folderChk = folderEl.querySelector(".tc-picker-folder-chk");
-    if (folderChk) {
-      folderChk.checked = selCount === ids.length;
-      folderChk.indeterminate = selCount > 0 && selCount < ids.length;
-    }
-  }
-  updateTcPickerCount();
+  _renderTcPickerFolderTree("tcPickerTree", tcs, _tcPickerSelectedIds, _tcPickerCollapsed, updateTcPickerCount);
 }
 
 function updateTcPickerCount() {
@@ -6052,113 +6186,9 @@ function filterRunTcPicker() {
   renderRunTcPickerTree(filtered);
 }
 
+const _runTcPickerCollapsed = new Set();
 function renderRunTcPickerTree(tcs) {
-  const tree = document.getElementById("runTcPickerTree");
-  if (!tree) return;
-
-  if (tcs.length === 0) {
-    tree.innerHTML = '<div class="tc-picker-empty">조건에 맞는 테스트케이스가 없습니다.</div>';
-    updateRunTcPickerCount();
-    return;
-  }
-
-  const groups = {};
-  const noFolder = [];
-  for (const tc of tcs) {
-    const fid = tc.folderId;
-    if (fid) {
-      if (!groups[fid]) groups[fid] = { name: tc.folderName || `폴더 ${fid}`, tcs: [] };
-      groups[fid].tcs.push(tc);
-    } else {
-      noFolder.push(tc);
-    }
-  }
-
-  const allGroups = Object.entries(groups).map(([, g]) => g);
-  if (noFolder.length) allGroups.push({ name: "미분류", tcs: noFolder });
-
-  let html = "";
-  for (const g of allGroups) {
-    const ids = g.tcs.map(t => t.id).join(",");
-    const selCount = g.tcs.filter(t => _runTcPickerSelectedIds.has(t.id)).length;
-    const allSel = selCount === g.tcs.length;
-    const someSel = selCount > 0 && !allSel;
-    html += `<div class="tc-picker-folder" data-folder-tcids="${ids}">
-      <input type="checkbox" class="tc-picker-folder-chk" ${allSel ? "checked" : ""}
-        ${someSel ? "data-indeterminate='true'" : ""}
-        onclick="event.stopPropagation();toggleRunTcPickerFolderSelect(this)">
-      <span class="tc-picker-folder-arrow" onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">▼</span>
-      <span onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">📁 ${escapeHtml(g.name)}</span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${g.tcs.length}건</span>
-    </div>`;
-    for (const tc of g.tcs) {
-      const chk = _runTcPickerSelectedIds.has(tc.id) ? "checked" : "";
-      const priCls = { HIGH:"b-hi", MEDIUM:"b-mid", LOW:"b-lo" }[tc.priority] || "b-mid";
-      html += `<div class="tc-picker-tc" onclick="toggleRunTcPickerItem(event,${tc.id})">
-        <input type="checkbox" ${chk} data-tcid="${tc.id}" onclick="event.stopPropagation();toggleRunTcPickerItem(event,${tc.id})">
-        <div class="tc-picker-tc-info">
-          <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3,"0")} ${escapeHtml(tc.title)}</div>
-          <div class="tc-picker-tc-badges">
-            <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
-            <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
-          </div>
-        </div>
-      </div>`;
-    }
-  }
-  tree.innerHTML = html;
-
-  tree.querySelectorAll(".tc-picker-folder-chk[data-indeterminate='true']").forEach(cb => {
-    cb.indeterminate = true;
-  });
-
-  updateRunTcPickerCount();
-}
-
-function toggleRunTcPickerFolderSelect(chkEl) {
-  const folderEl = chkEl.closest(".tc-picker-folder");
-  if (!folderEl) return;
-  const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-  const allSelected = ids.every(id => _runTcPickerSelectedIds.has(id));
-  if (allSelected) {
-    ids.forEach(id => _runTcPickerSelectedIds.delete(id));
-    chkEl.checked = false;
-    chkEl.indeterminate = false;
-  } else {
-    ids.forEach(id => _runTcPickerSelectedIds.add(id));
-    chkEl.checked = true;
-    chkEl.indeterminate = false;
-  }
-  ids.forEach(id => {
-    const cb = document.querySelector(`#runTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
-    if (cb) cb.checked = _runTcPickerSelectedIds.has(id);
-  });
-  updateRunTcPickerCount();
-}
-
-function toggleRunTcPickerItem(event, id) {
-  if (_runTcPickerSelectedIds.has(id)) {
-    _runTcPickerSelectedIds.delete(id);
-  } else {
-    _runTcPickerSelectedIds.add(id);
-  }
-  const chk = document.querySelector(`#runTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
-  if (chk) chk.checked = _runTcPickerSelectedIds.has(id);
-  const tcRow = chk?.closest(".tc-picker-tc");
-  let folderEl = tcRow?.previousElementSibling;
-  while (folderEl && !folderEl.classList.contains("tc-picker-folder")) {
-    folderEl = folderEl.previousElementSibling;
-  }
-  if (folderEl) {
-    const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-    const selCount = ids.filter(i => _runTcPickerSelectedIds.has(i)).length;
-    const folderChk = folderEl.querySelector(".tc-picker-folder-chk");
-    if (folderChk) {
-      folderChk.checked = selCount === ids.length;
-      folderChk.indeterminate = selCount > 0 && selCount < ids.length;
-    }
-  }
-  updateRunTcPickerCount();
+  _renderTcPickerFolderTree("runTcPickerTree", tcs, _runTcPickerSelectedIds, _runTcPickerCollapsed, updateRunTcPickerCount);
 }
 
 function updateRunTcPickerCount() {
@@ -6200,113 +6230,9 @@ function filterPlanTcPicker() {
   renderPlanTcPickerTree(filtered);
 }
 
+const _planTcPickerCollapsed = new Set();
 function renderPlanTcPickerTree(tcs) {
-  const tree = document.getElementById("planTcPickerTree");
-  if (!tree) return;
-
-  if (tcs.length === 0) {
-    tree.innerHTML = '<div class="tc-picker-empty">조건에 맞는 테스트케이스가 없습니다.</div>';
-    updatePlanTcPickerCount();
-    return;
-  }
-
-  const groups = {};
-  const noFolder = [];
-  for (const tc of tcs) {
-    const fid = tc.folderId;
-    if (fid) {
-      if (!groups[fid]) groups[fid] = { name: tc.folderName || `폴더 ${fid}`, tcs: [] };
-      groups[fid].tcs.push(tc);
-    } else {
-      noFolder.push(tc);
-    }
-  }
-
-  const allGroups = Object.entries(groups).map(([, g]) => g);
-  if (noFolder.length) allGroups.push({ name: "미분류", tcs: noFolder });
-
-  let html = "";
-  for (const g of allGroups) {
-    const ids = g.tcs.map(t => t.id).join(",");
-    const selCount = g.tcs.filter(t => _planTcPickerSelectedIds.has(t.id)).length;
-    const allSel = selCount === g.tcs.length;
-    const someSel = selCount > 0 && !allSel;
-    html += `<div class="tc-picker-folder" data-folder-tcids="${ids}">
-      <input type="checkbox" class="tc-picker-folder-chk" ${allSel ? "checked" : ""}
-        ${someSel ? "data-indeterminate='true'" : ""}
-        onclick="event.stopPropagation();togglePlanTcPickerFolderSelect(this)">
-      <span class="tc-picker-folder-arrow" onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">▼</span>
-      <span onclick="toggleTcPickerFolder(this.closest('.tc-picker-folder'))">📁 ${escapeHtml(g.name)}</span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text-muted)">${g.tcs.length}건</span>
-    </div>`;
-    for (const tc of g.tcs) {
-      const chk = _planTcPickerSelectedIds.has(tc.id) ? "checked" : "";
-      const priCls = { HIGH:"b-hi", MEDIUM:"b-mid", LOW:"b-lo" }[tc.priority] || "b-mid";
-      html += `<div class="tc-picker-tc" onclick="togglePlanTcPickerItem(event,${tc.id})">
-        <input type="checkbox" ${chk} data-tcid="${tc.id}" onclick="event.stopPropagation();togglePlanTcPickerItem(event,${tc.id})">
-        <div class="tc-picker-tc-info">
-          <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3,"0")} ${escapeHtml(tc.title)}</div>
-          <div class="tc-picker-tc-badges">
-            <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
-            <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
-          </div>
-        </div>
-      </div>`;
-    }
-  }
-  tree.innerHTML = html;
-
-  tree.querySelectorAll(".tc-picker-folder-chk[data-indeterminate='true']").forEach(cb => {
-    cb.indeterminate = true;
-  });
-
-  updatePlanTcPickerCount();
-}
-
-function togglePlanTcPickerFolderSelect(chkEl) {
-  const folderEl = chkEl.closest(".tc-picker-folder");
-  if (!folderEl) return;
-  const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-  const allSelected = ids.every(id => _planTcPickerSelectedIds.has(id));
-  if (allSelected) {
-    ids.forEach(id => _planTcPickerSelectedIds.delete(id));
-    chkEl.checked = false;
-    chkEl.indeterminate = false;
-  } else {
-    ids.forEach(id => _planTcPickerSelectedIds.add(id));
-    chkEl.checked = true;
-    chkEl.indeterminate = false;
-  }
-  ids.forEach(id => {
-    const cb = document.querySelector(`#planTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
-    if (cb) cb.checked = _planTcPickerSelectedIds.has(id);
-  });
-  updatePlanTcPickerCount();
-}
-
-function togglePlanTcPickerItem(event, id) {
-  if (_planTcPickerSelectedIds.has(id)) {
-    _planTcPickerSelectedIds.delete(id);
-  } else {
-    _planTcPickerSelectedIds.add(id);
-  }
-  const chk = document.querySelector(`#planTcPickerTree .tc-picker-tc input[data-tcid="${id}"]`);
-  if (chk) chk.checked = _planTcPickerSelectedIds.has(id);
-  const tcRow = chk?.closest(".tc-picker-tc");
-  let folderEl = tcRow?.previousElementSibling;
-  while (folderEl && !folderEl.classList.contains("tc-picker-folder")) {
-    folderEl = folderEl.previousElementSibling;
-  }
-  if (folderEl) {
-    const ids = (folderEl.dataset.folderTcids || "").split(",").map(Number).filter(Boolean);
-    const selCount = ids.filter(i => _planTcPickerSelectedIds.has(i)).length;
-    const folderChk = folderEl.querySelector(".tc-picker-folder-chk");
-    if (folderChk) {
-      folderChk.checked = selCount === ids.length;
-      folderChk.indeterminate = selCount > 0 && selCount < ids.length;
-    }
-  }
-  updatePlanTcPickerCount();
+  _renderTcPickerFolderTree("planTcPickerTree", tcs, _planTcPickerSelectedIds, _planTcPickerCollapsed, updatePlanTcPickerCount);
 }
 
 function updatePlanTcPickerCount() {
