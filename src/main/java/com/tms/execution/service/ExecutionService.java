@@ -208,18 +208,26 @@ public class ExecutionService {
         String defaultName = (single ? first.getName() : suiteNames) + " — " + LocalDate.now();
         String name = request.name() != null && !request.name().isBlank() ? request.name().trim() : defaultName;
 
-        // B안: testPlan이 null일 수 있음. 여러 스위트가 서로 다른 플랜에 속하면 플랜을 지정하지 않지만,
-        //       선택된 스위트가 모두 같은 플랜에 속하면 그 플랜을 실행에 연결한다.
+        // 사용자가 새 테스트런 모달에서 플랜을 명시적으로 골랐으면 그걸 그대로 쓴다.
+        // 명시적으로 고르지 않았을 때만 스위트에서 자동으로 유추한다(B안): 여러 스위트가 서로 다른
+        // 플랜에 속하면 플랜을 지정하지 않지만, 선택된 스위트가 모두 같은 플랜에 속하면 그 플랜을 연결한다.
         Long planId = null;
         String planName = null;
-        Set<Long> planIds = suites.stream()
-                .map(TestSuite::getTestPlan)
-                .filter(java.util.Objects::nonNull)
-                .map(TestPlan::getId)
-                .collect(Collectors.toSet());
-        if (planIds.size() == 1 && suites.stream().allMatch(s -> s.getTestPlan() != null)) {
-            planId = first.getTestPlan().getId();
-            planName = first.getTestPlan().getName();
+        if (request.testPlanId() != null) {
+            TestPlan plan = testPlanRepository.findById(request.testPlanId())
+                    .orElseThrow(() -> new EntityNotFoundException("TestPlan not found. id=" + request.testPlanId()));
+            planId = plan.getId();
+            planName = plan.getName();
+        } else {
+            Set<Long> planIds = suites.stream()
+                    .map(TestSuite::getTestPlan)
+                    .filter(java.util.Objects::nonNull)
+                    .map(TestPlan::getId)
+                    .collect(Collectors.toSet());
+            if (planIds.size() == 1 && suites.stream().allMatch(s -> s.getTestPlan() != null)) {
+                planId = first.getTestPlan().getId();
+                planName = first.getTestPlan().getName();
+            }
         }
 
         Execution execution = new Execution(

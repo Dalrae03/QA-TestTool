@@ -452,6 +452,8 @@ table.ctbl tr:not(.tc-row-dragging):hover td { background: #f9f9f7; }
 .tc-node { color: var(--text-secondary); }
 .tc-node:hover { background: var(--bg-app); color: var(--text-primary); cursor: pointer; }
 .tc-node.active { background: var(--accent-glow); color: var(--accent); }
+.tc-node.tc-node-selected { background: #eff6ff; box-shadow: inset 2px 0 0 var(--accent); }
+.tc-node.tc-node-selected.active { background: var(--accent-glow); }
 .tc-node-label { font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tc-drag-handle { font-size: 10px; color: #ccc; cursor: grab; flex-shrink: 0; line-height: 1; margin-right: 2px; }
 .tc-node:hover .tc-drag-handle { color: #aaa; }

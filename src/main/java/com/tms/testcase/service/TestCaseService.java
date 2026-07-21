@@ -226,13 +226,15 @@ public class TestCaseService {
     @Transactional
     public TestCaseResponse moveToFolder(Long testCaseId, Long folderId) {
         TestCase testCase = findById(testCaseId);
-        String before = folderName(testCase.getFolder());
+        TestFolder currentFolder = testCase.getFolder();
         TestFolder folder = loadFolder(folderId);
         validateProjectScope(testCase.getProjectId(), folder, List.of());
-        String after = folderName(folder);
-        if (Objects.equals(before, after)) {
+        Long currentFolderId = currentFolder == null ? null : currentFolder.getId();
+        if (Objects.equals(currentFolderId, folderId)) {
             return TestCaseResponse.from(testCase); // 폴더 변경 없음 — 버전/로그 생성하지 않음
         }
+        String before = folderName(currentFolder);
+        String after = folderName(folder);
         testCase.moveToFolder(folder);
         auditLogService.recordIfChanged(
                 AuditLogService.TEST_CASE,
