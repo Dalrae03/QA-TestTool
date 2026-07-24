@@ -76,7 +76,7 @@ class ExecutionControllerIntegrationTest {
                         ))))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", org.hamcrest.Matchers.matchesPattern("/api/test-runs/\\d+")))
-                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.suiteName").value("Authentication"))
                 .andExpect(jsonPath("$.version").value("2.21"))
                 .andExpect(jsonPath("$.total").value(2))
@@ -93,7 +93,9 @@ class ExecutionControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.passed").value(1))
                 .andExpect(jsonPath("$.untested").value(1))
-                .andExpect(jsonPath("$.progressPct").value(50));
+                .andExpect(jsonPath("$.progressPct").value(50))
+                // 첫 실제 결과가 기록되면 '준비됨' 런이 '진행 중'으로 자동 전환된다.
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"));
 
         mockMvc.perform(put("/api/test-runs/{id}", runId)
                         .contentType(MediaType.APPLICATION_JSON)

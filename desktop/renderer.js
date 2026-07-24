@@ -47,7 +47,7 @@ const state = {
   runsContext: "folder",   // "folder" | "tc" — 실행 기록 탭에서 보여줄 대상
   unclassifiedCollapsed: false,
   folderSearchQuery: "",
-  sort: "updated_desc",
+  sort: "id_asc",
   filters: { status: "", os: "", type: "", areaTagId: "", keyword: "", version: "" }
 };
 
@@ -271,7 +271,7 @@ function _saveFolderCollapsed() {
 function _flattenFolderTree(nodes, collapsed) {
   const result = [];
   for (const n of nodes) {
-    result.push({ id: n.id, name: n.name, parentId: n.parentId ?? null, collapsed: !!collapsed[String(n.id)] });
+    result.push({ id: n.id, name: n.name, code: n.code ?? null, effectiveCode: n.effectiveCode ?? null, parentId: n.parentId ?? null, collapsed: !!collapsed[String(n.id)] });
     if (n.children?.length) result.push(..._flattenFolderTree(n.children, collapsed));
   }
   return result;
@@ -446,7 +446,7 @@ function _renderTcPickerFolderTree(containerId, tcs, selectedIds, collapsedSet, 
     row.innerHTML = `
       <input type="checkbox" ${selectedIds.has(tc.id) ? "checked" : ""}>
       <div class="tc-picker-tc-info">
-        <div class="tc-picker-tc-title">TC-${String(tc.id).padStart(3, "0")} ${escapeHtml(tc.title)}</div>
+        <div class="tc-picker-tc-title">${escapeHtml(tcDisplayId(tc))} ${escapeHtml(tc.title)}</div>
         <div class="tc-picker-tc-badges">
           <span class="badge ${priCls}" style="font-size:9px">${tc.priority}</span>
           <span class="badge b-tag" style="font-size:9px">${tc.status}</span>
@@ -662,16 +662,81 @@ async function deleteFolder(folderId) {
   renderFolderTree(); renderFolderSelect(); renderList();
 }
 
+// Electron은 window.prompt를 지원하지 않으므로(조용히 무시됨) 인앱 텍스트 입력 모달로 대체한다.
+// 확인 시 입력값(문자열), 취소/ESC/배경클릭 시 null을 resolve 한다.
+function _promptModal({ title, label = "", value = "", placeholder = "", help = "", maxlength = 200 }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML =
+      `<div class="modal-card" style="width:420px">
+        <div class="modal-hd"><span>${escapeHtml(title)}</span><button class="modal-close" data-act="cancel" aria-label="닫기">✕</button></div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:8px">
+          ${label ? `<label style="font-size:12px;color:var(--text-secondary)">${escapeHtml(label)}</label>` : ""}
+          <input type="text" class="form-input" data-role="input" maxlength="${maxlength}" placeholder="${escapeHtml(placeholder)}">
+          ${help ? `<div style="font-size:11px;color:var(--text-muted);white-space:pre-line">${escapeHtml(help)}</div>` : ""}
+        </div>
+        <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+          <button class="btn btn-sm" data-act="cancel">취소</button>
+          <button class="btn btn-sm btn-pri" data-act="ok">확인</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('[data-role="input"]');
+    input.value = value;
+    const done = (result) => { overlay.remove(); document.removeEventListener("keydown", onKey, true); resolve(result); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(null); }
+      else if (e.key === "Enter") { e.preventDefault(); done(input.value); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    overlay.addEventListener("click", (e) => {
+      const act = e.target.closest("[data-act]")?.dataset.act;
+      if (act === "ok") done(input.value);
+      else if (act === "cancel") done(null);
+      else if (e.target === overlay) done(null); // 배경 클릭 시 취소
+    });
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+
 async function renameFolder(folderId) {
   const folder = state.folders.find(f => f.id === folderId);
   if (!folder) return;
-  const newName = window.prompt("폴더 이름 변경", folder.name);
-  if (!newName || !newName.trim() || newName.trim() === folder.name) return;
+  const newName = await _promptModal({ title: "폴더 이름 변경", label: "폴더 이름", value: folder.name });
+  if (newName === null || !newName.trim() || newName.trim() === folder.name) return;
   try {
-    await request(`/api/folders/${folderId}`, { method: "PUT", body: JSON.stringify({ name: newName.trim(), parentId: folder.parentId || null }) });
+    // code는 이 요청에 안 실으면 서버가 null로 지우므로 기존 값을 함께 보존한다.
+    await request(`/api/folders/${folderId}`, { method: "PUT", body: JSON.stringify({ name: newName.trim(), code: folder.code || null, parentId: folder.parentId || null }) });
     await loadFolders();
     renderFolderTree(); renderFolderSelect();
   } catch (e) { _toast(`이름 변경 실패: ${e.message}`, true); }
+}
+
+// 폴더의 TC 표시 ID 접두사(대분류/소분류별로 다른 코드)를 지정·수정한다. 비우면 상위 폴더에서 상속.
+async function setFolderCode(folderId) {
+  const folder = state.folders.find(f => f.id === folderId);
+  if (!folder) return;
+  const inherited = folder.effectiveCode && folder.effectiveCode !== folder.code
+    ? `현재 상위에서 '${folder.effectiveCode}' 상속 중.` : "";
+  const input = await _promptModal({
+    title: "TC 접두사 코드",
+    label: "접두사 (예: LOGIN, PAY)",
+    value: folder.code || "",
+    placeholder: "비우면 상위 폴더 코드 상속",
+    help: `대문자로 저장됩니다. 비워두면 상위 폴더에서 상속합니다.\n${inherited}`.trim(),
+    maxlength: 20
+  });
+  if (input === null) return; // 취소
+  const code = input.trim().toUpperCase();
+  if (code === (folder.code || "")) return; // 변경 없음
+  try {
+    await request(`/api/folders/${folderId}`, { method: "PUT", body: JSON.stringify({ name: folder.name, code: code || null, parentId: folder.parentId || null }) });
+    await loadFolders();
+    await loadTestCases(); // 표시 ID가 바뀌므로 목록도 새로고침
+    renderFolderTree(); renderFolderSelect(); renderList();
+    _toast(code ? `접두사를 '${code}'로 지정했습니다.` : "접두사를 지웠습니다(상위 상속).");
+  } catch (e) { _toast(`접두사 설정 실패: ${e.message}`, true); }
 }
 
 // ── 폴더 컨텍스트 메뉴 ────────────────────────────────────────────
@@ -681,6 +746,7 @@ const _folderCtxMenu = (() => {
   el.innerHTML = `
     <div class="folder-ctx-item" data-action="add-sub">📁 하위 폴더 추가</div>
     <div class="folder-ctx-item" data-action="rename">✏️ 이름 변경</div>
+    <div class="folder-ctx-item" data-action="set-code">🔖 TC 접두사 코드</div>
     <div class="folder-ctx-sep"></div>
     <div class="folder-ctx-item danger" data-action="delete">🗑 삭제</div>
   `;
@@ -698,6 +764,7 @@ const _folderCtxMenu = (() => {
     hide();
     if (action === "add-sub")  addSubFolder(folderId);
     if (action === "rename")   renameFolder(folderId);
+    if (action === "set-code") setFolderCode(folderId);
     if (action === "delete")   deleteFolder(folderId);
   });
 
@@ -753,16 +820,19 @@ async function _moveDraggedTcsToFolder(folderId) {
   if (ids.length === 0) return;
   const folder = folderId ? state.folders.find(f => f.id === folderId) : null;
   const label = folder ? `'${folder.name}' 폴더로` : "미분류로";
+  // 대상 폴더의 유효 접두사로 표시 ID를 낙관적으로 갱신한다 — 안 하면 옮겨도 이전 접두사가 남는다.
+  const newPrefix = folder && folder.effectiveCode ? folder.effectiveCode : "TC";
   ids.forEach(tid => {
     if (folderId) state.folderAssignments[String(tid)] = folderId;
     else delete state.folderAssignments[String(tid)];
     // state.folderAssignments는 loadFolders()가 호출될 때마다 tc.folderId로부터 다시 만들어지므로
     // (_rebuildFolderAssignments), 원본 TC 객체의 folderId도 함께 갱신해야 이후 재조회 시 되돌아가지 않는다.
+    const newDisplayId = `${newPrefix}-${String(tid).padStart(3, "0")}`;
     const tc = state.allTestCases.find(t => t.id === tid);
-    if (tc) tc.folderId = folderId || null;
+    if (tc) { tc.folderId = folderId || null; tc.displayId = newDisplayId; }
     if (state.testCases !== state.allTestCases) {
       const tc2 = state.testCases.find(t => t.id === tid);
-      if (tc2) tc2.folderId = folderId || null;
+      if (tc2) { tc2.folderId = folderId || null; tc2.displayId = newDisplayId; }
     }
     _syncEditorFolder(tid, folderId || "");
     state.tcSelection.delete(tid);
@@ -788,8 +858,9 @@ async function moveFolderBefore(srcId, tgtId) {
   const tgt = state.folders.find(f => f.id === tgtId);
   if (!src || !tgt) return;
   try {
-    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgt.parentId }) });
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, code: src.code || null, parentId: tgt.parentId }) });
     await loadFolders();
+    await loadTestCases(); // 상위가 바뀌면 상속 접두사(표시 ID)도 바뀌므로 목록 갱신
   } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
   renderFolderTree(); renderFolderSelect(); renderList();
 }
@@ -799,8 +870,9 @@ async function moveFolderAfter(srcId, tgtId) {
   const tgt = state.folders.find(f => f.id === tgtId);
   if (!src || !tgt) return;
   try {
-    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgt.parentId }) });
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, code: src.code || null, parentId: tgt.parentId }) });
     await loadFolders();
+    await loadTestCases(); // 상위가 바뀌면 상속 접두사(표시 ID)도 바뀌므로 목록 갱신
   } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
   renderFolderTree(); renderFolderSelect(); renderList();
 }
@@ -809,8 +881,9 @@ async function moveFolderInto(srcId, tgtId) {
   const src = state.folders.find(f => f.id === srcId);
   if (!src) return;
   try {
-    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, parentId: tgtId }) });
+    await request(`/api/folders/${srcId}`, { method: "PUT", body: JSON.stringify({ name: src.name, code: src.code || null, parentId: tgtId }) });
     await loadFolders();
+    await loadTestCases(); // 상위가 바뀌면 상속 접두사(표시 ID)도 바뀌므로 목록 갱신
   } catch (e) { _toast(`폴더 이동 실패: ${e.message}`, true); return; }
   renderFolderTree(); renderFolderSelect(); renderList();
 }
@@ -939,7 +1012,10 @@ function _renderFolderNodes(container, parentId, depth, visibleFolderIds = null)
     const caretHtml = hasChildren
       ? `<span class="folder-caret ${folder.collapsed ? "" : "open"}" title="접기/펼치기">▶</span>`
       : `<span class="folder-caret-placeholder"></span>`;
-    node.innerHTML = `<span class="drag-handle">⋮⋮</span>${caretHtml}<span style="font-size:${depth===0?"14px":"13px"}">📁</span><span class="folder-label">${escapeHtml(folder.name)}</span>`;
+    const codeBadge = folder.effectiveCode
+      ? `<span class="folder-code-badge"${folder.code ? "" : ' data-inherited="1" title="상위 폴더에서 상속된 접두사"'}>${escapeHtml(folder.effectiveCode)}</span>`
+      : "";
+    node.innerHTML = `<span class="drag-handle">⋮⋮</span>${caretHtml}<span style="font-size:${depth===0?"14px":"13px"}">📁</span><span class="folder-label">${escapeHtml(folder.name)}</span>${codeBadge}`;
 
     // 하위 폴더 추가 버튼 (margin-left:auto 로 오른쪽 정렬 시작)
     const addBtn = document.createElement("button");
@@ -1139,7 +1215,7 @@ async function renderDashboard() {
 
   if (g("dashStatTotal"))     g("dashStatTotal").textContent     = total;
   if (g("dashStatReady"))     g("dashStatReady").textContent     = byStatus.READY ?? 0;
-  if (g("dashStatIssues"))    g("dashStatIssues").textContent    = byStatus.REVIEW_NEEDED ?? 0;
+  if (g("dashStatIssues"))    g("dashStatIssues").textContent    = stats?.openDefects?.length ?? 0;
   if (g("dashStatCompleted")) g("dashStatCompleted").textContent = byStatus.COMPLETED ?? 0;
 
   const hi = byPriority.HIGH ?? 0, mid = byPriority.MEDIUM ?? 0, lo = byPriority.LOW ?? 0;
@@ -1149,11 +1225,20 @@ async function renderDashboard() {
   const tc2 = g("dashTagChips");
   if (tc2) { const e = Object.entries(byAreaTag); tc2.innerHTML = e.length===0 ? '<span style="font-size:12px;color:var(--text-muted)">태그 없음</span>' : e.map(([n,c])=>`<span class="tag-chip">${escapeHtml(n)} (${c})</span>`).join(""); }
 
-  // 검토 필요 이슈 목록은 제목 등 상세가 필요해 이미 받아온 전체 목록에서 추려낸다(집계 DTO에는 제목이 없음).
-  const issues = state.allTestCases.filter(t=>t.status==="REVIEW_NEEDED");
-  if (g("dashIssueCount")) g("dashIssueCount").textContent = `${issues.length}건`;
+  // 잔존 이슈 = 미해결 결함(OPEN·IN_PROGRESS). 결함을 해결/종료하면 자동으로 목록에서 빠진다(별도 설정 불필요).
+  const openDefects = stats?.openDefects ?? [];
+  if (g("dashIssueCount")) g("dashIssueCount").textContent = `${openDefects.length}건`;
   const il = g("dashIssueList");
-  if (il) { const pc = { HIGH:"b-hi",MEDIUM:"b-mid",LOW:"b-lo" }; il.innerHTML = issues.length===0 ? '<p style="font-size:12px;color:var(--text-muted)">검토가 필요한 이슈가 없습니다.</p>' : issues.map(tc=>`<div class="issue-item" onclick="switchView('testcases')"><div class="issue-item-title">${escapeHtml(tc.title)}</div><div class="issue-item-meta"><span class="badge b-review">검토 필요</span><span class="badge ${pc[tc.priority]||"b-mid"}">${escapeHtml(tc.priority??"MEDIUM")}</span></div></div>`).join(""); }
+  if (il) {
+    const sev = { CRITICAL:{l:"Critical",c:"220,38,38"}, MAJOR:{l:"Major",c:"234,88,12"}, MINOR:{l:"Minor",c:"202,138,4"}, TRIVIAL:{l:"Trivial",c:"107,114,128"} };
+    const stLbl = { OPEN:"미해결", IN_PROGRESS:"진행중" };
+    il.innerHTML = openDefects.length === 0
+      ? '<p style="font-size:12px;color:var(--text-muted)">미해결 결함이 없습니다.</p>'
+      : openDefects.map(d => {
+          const s = sev[d.severity] || { l: d.severity, c: "107,114,128" };
+          return `<div class="issue-item" onclick="switchView('testcases')"><div class="issue-item-title">${escapeHtml(d.title)}</div><div class="issue-item-meta"><span class="badge" style="background:rgba(${s.c},.15);color:rgb(${s.c})">${s.l}</span><span class="badge b-tag">${escapeHtml(stLbl[d.status] || d.status)}</span></div></div>`;
+        }).join("");
+  }
 
   renderDashboardRuns();
   renderDashboardAuditLogsFromStats(stats);
@@ -1179,8 +1264,9 @@ async function renderDashboardRuns() {
     failed:   a.failed   + (r.failed   || 0),
     blocked:  a.blocked  + (r.blocked  || 0),
     retest:   a.retest   + (r.retest   || 0),
+    notImplemented: a.notImplemented + (r.notImplemented || 0),
     untested: a.untested + (r.untested || 0)
-  }), { total: 0, passed: 0, failed: 0, blocked: 0, retest: 0, untested: 0 });
+  }), { total: 0, passed: 0, failed: 0, blocked: 0, retest: 0, notImplemented: 0, untested: 0 });
   const executed = sum.total - sum.untested;
   const passRate = executed ? Math.round((sum.passed / executed) * 100) : 0;
 
@@ -1194,6 +1280,7 @@ async function renderDashboardRuns() {
     `<span class="suite-run-chip fail">실패 ${sum.failed}</span>` +
     `<span class="suite-run-chip block">차단 ${sum.blocked}</span>` +
     (sum.retest ? `<span class="suite-run-chip retest">재테스트 ${sum.retest}</span>` : "") +
+    (sum.notImplemented ? `<span class="suite-run-chip notimpl">미구현 ${sum.notImplemented}</span>` : "") +
     `<span class="suite-run-prog" style="margin-left:4px">미실행 ${sum.untested}</span>`;
 
   renderDashboardRunList(g("dashRunList"), runs);
@@ -1201,7 +1288,8 @@ async function renderDashboardRuns() {
 
 // 테스트런별 상황 — 각 런을 진행바·집계와 함께 한 줄로. 클릭하면 해당 런 화면으로 이동.
 const DASH_RUN_STATUS = {
-  IN_PROGRESS: { cls: "b-ready", label: "진행 중" },
+  READY:       { cls: "b-ready", label: "준비됨" },
+  IN_PROGRESS: { cls: "b-hi",    label: "진행 중" },
   COMPLETED:   { cls: "b-done",  label: "완료" }
 };
 function renderDashboardRunList(listEl, runs) {
@@ -1214,7 +1302,7 @@ function renderDashboardRunList(listEl, runs) {
     const st = DASH_RUN_STATUS[r.status] || { cls: "b-tag", label: r.status || "-" };
     const seg = (n, cls) => n > 0 ? `<div class="bar-seg ${cls}" style="width:${(n / total) * 100}%"></div>` : "";
     const bar = total === 0 ? "" :
-      seg(r.passed, "pass") + seg(r.failed, "fail") + seg(r.blocked, "block") + seg(r.retest, "retest");
+      seg(r.passed, "pass") + seg(r.failed, "fail") + seg(r.blocked, "block") + seg(r.retest, "retest") + seg(r.notImplemented, "notimpl");
     return `<div class="dash-runlist-item" onclick="openRunFromDashboard(${r.id})">` +
         `<div class="dash-runlist-head">` +
           `<span class="dash-runlist-name" title="${escapeHtml(r.name || "")}">${escapeHtml(r.name || "(이름 없음)")}</span>` +
@@ -1282,7 +1370,7 @@ function hideEditor() {
 }
 function updateDetailHeader(tc) {
   if (!tc) { elements.dtCaseId.textContent = "새 테스트케이스"; elements.dtPills.innerHTML = ""; return; }
-  elements.dtCaseId.textContent = `TC-${String(tc.id).padStart(3,"0")}`;
+  elements.dtCaseId.textContent = tcDisplayId(tc);
   const sMap = { DRAFT:"b-draft",REVIEW_NEEDED:"b-review",READY:"b-ready",COMPLETED:"b-done" };
   const sLbl = { DRAFT:"초안",REVIEW_NEEDED:"검토 필요",READY:"준비됨",COMPLETED:"완료" };
   const pMap = { HIGH:"b-hi",MEDIUM:"b-mid",LOW:"b-lo" };
@@ -1300,7 +1388,7 @@ async function loadAreaTags() {
   try {
     const qs = state.currentProjectId ? `?projectId=${state.currentProjectId}` : "";
     state.areaTags = await request(`/api/area-tags${qs}`,{method:"GET"});
-    renderTagSelect(); renderFilterAreaTagSelect(); renderAreaTagManageList();
+    renderTagSelect(); renderFilterAreaTagSelect(); renderAreaTagManageList(); renderBulkAreaTagSelect();
   }
   catch (_e) { state.areaTags = []; }
 }
@@ -1347,6 +1435,16 @@ function renderFilterAreaTagSelect() {
   state.areaTags.forEach(tag => { const opt = document.createElement("option"); opt.value = tag.id; opt.textContent = tag.name; elements.filterAreaTag.appendChild(opt); });
   elements.filterAreaTag.value = prev;
 }
+// 일괄 처리 바의 영역 태그 select — 기존 태그 + '새 태그 만들어 적용' 항목을 채운다.
+function renderBulkAreaTagSelect() {
+  const sel = document.getElementById("tcBulkAreaTag");
+  if (!sel) return;
+  const opts = ['<option value="">영역 태그 일괄…</option>'];
+  state.areaTags.forEach(tag => { opts.push(`<option value="${tag.id}">＋ ${escapeHtml(tag.name)}</option>`); });
+  opts.push('<option value="__new__">✚ 새 태그 만들어 적용…</option>');
+  sel.innerHTML = opts.join("");
+  sel.value = "";
+}
 /** 프로젝트 내 테스트케이스들의 버전 값을 훑어 필터 드롭다운을 구성한다 (존재하는 버전만 자동 파악). */
 function renderFilterVersionSelect() {
   if (!elements.filterVersion) return;
@@ -1379,6 +1477,9 @@ function addSelectedTag(id) {
 }
 async function createAndAddTag(name) {
   const trimmed = name.trim(); if (!trimmed) return;
+  // 영역 태그는 프로젝트별로 격리된다(TC와 동일) — 프로젝트 없이 만들면 전역(null) 태그가 되어
+  // 이후 어떤 프로젝트에서도 보이지 않는 문제가 생기므로, 프로젝트 선택을 강제한다.
+  if (!state.currentProjectId) { _toast("프로젝트를 먼저 선택한 뒤 영역 태그를 만들 수 있습니다.", true); return; }
   try {
     const created = await request("/api/area-tags",{method:"POST",body:JSON.stringify({name:trimmed, projectId: state.currentProjectId || null})});
     state.areaTags.push(created); renderFilterAreaTagSelect(); addSelectedTag(created.id); elements.newTagInput.value = "";
@@ -1890,13 +1991,13 @@ async function populateForm(testCase) {
   renderSelectedTagChips(); renderTagSelect();
   setSelected(testCase.id);
   state.runsContext = "tc";
-  elements.editorTitle.textContent = testCase.title || `TC-${String(testCase.id).padStart(3,"0")}`;
+  elements.editorTitle.textContent = testCase.title || tcDisplayId(testCase);
   elements.formMode.textContent    = "수정 후 저장하면 PUT 요청이 전송됩니다.";
   updateRunStatus("실행 결과를 저장하면 이력에 추가됩니다.");
   setFlowStage("saved", "저장된 케이스입니다. 수정하거나 실행 결과를 기록할 수 있습니다.");
   updateDetailHeader(testCase);
   if (elements.runPanelCaseTitle) elements.runPanelCaseTitle.textContent = testCase.title;
-  if (elements.runPanelCaseId)   elements.runPanelCaseId.textContent = `TC-${String(testCase.id).padStart(3,"0")} 실행 기록`;
+  if (elements.runPanelCaseId)   elements.runPanelCaseId.textContent = `${tcDisplayId(testCase)} 실행 기록`;
   renderList();
   renderFolderTree();   // 폴더 트리에서 현재 TC 하이라이트 갱신
   showEditor();
@@ -2040,7 +2141,7 @@ async function restoreTestCaseVersion(versionId) {
   if (!confirm("선택한 버전으로 현재 테스트케이스를 복원할까요? 현재 상태도 새 버전으로 기록됩니다.")) return;
   try {
     const restored = await request(`/api/testcases/${testCaseId}/versions/${versionId}/restore`, { method: "POST" });
-    _toast(`TC-${String(restored.id).padStart(3,"0")} 버전을 복원했습니다.`);
+    _toast(`${tcDisplayId(restored)} 버전을 복원했습니다.`);
     await loadTestCases();
     const fresh = state.allTestCases.find(tc => tc.id === restored.id) || restored;
     await populateForm(fresh);
@@ -2193,7 +2294,8 @@ async function createDefectAndLink() {
         description: document.getElementById("defectDescription").value.trim() || null,
         severity: document.getElementById("defectSeverity").value,
         status: document.getElementById("defectStatus").value,
-        externalUrl: document.getElementById("defectExternalUrl").value.trim() || null
+        externalUrl: document.getElementById("defectExternalUrl").value.trim() || null,
+        projectId: state.currentProjectId || null
       })
     });
     await request(`/api/testcases/${tcId}/defects/${created.id}`, { method: "POST" });
@@ -2233,7 +2335,8 @@ async function deleteDefect(defectId, title) {
 
 async function loadAllDefects() {
   try {
-    state.allDefects = await request("/api/defects", { method: "GET" });
+    const qs = state.currentProjectId ? `?projectId=${state.currentProjectId}` : "";
+    state.allDefects = await request(`/api/defects${qs}`, { method: "GET" });
   } catch (_e) { state.allDefects = []; }
 }
 
@@ -2588,32 +2691,48 @@ function priorityBadge(priority) {
 function sortTestCases(testCases) {
   const priorityOrder = { HIGH: 0, MEDIUM: 1, LOW: 2 };
   const statusOrder = { DRAFT: 0, REVIEW_NEEDED: 1, READY: 2, COMPLETED: 3 };
+  const byIdAsc = (a, b) => Number(a.id || 0) - Number(b.id || 0);
   const byIdDesc = (a, b) => Number(b.id || 0) - Number(a.id || 0);
   const byTitle = (a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ko", { sensitivity: "base" });
 
   return [...testCases].sort((a, b) => {
     if (state.sort === "title_asc") {
-      return byTitle(a, b) || byIdDesc(a, b);
+      return byTitle(a, b) || byIdAsc(a, b);
     }
     if (state.sort === "priority_desc") {
       return (priorityOrder[a.priority] ?? 99) - (priorityOrder[b.priority] ?? 99)
         || byTitle(a, b)
-        || byIdDesc(a, b);
+        || byIdAsc(a, b);
     }
     if (state.sort === "status_asc") {
       return (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99)
         || byTitle(a, b)
-        || byIdDesc(a, b);
+        || byIdAsc(a, b);
+    }
+    if (state.sort === "updated_desc") {
+      const aTime = Date.parse(a.updatedAt || a.createdAt || "") || 0;
+      const bTime = Date.parse(b.updatedAt || b.createdAt || "") || 0;
+      return bTime - aTime || byIdDesc(a, b);
     }
 
-    const aTime = Date.parse(a.updatedAt || a.createdAt || "") || 0;
-    const bTime = Date.parse(b.updatedAt || b.createdAt || "") || 0;
-    return bTime - aTime || byIdDesc(a, b);
+    // 기본: ID 오름차순 — 수정해도 자리가 바뀌지 않아 번호가 순차적으로 유지된다.
+    return byIdAsc(a, b);
   });
 }
 
 // 목록에 현재 그려진 TC id 순서 — Shift+클릭 범위 선택에 사용. renderList()가 매 렌더링마다 초기화한다.
 let _tcRowOrder = [];
+
+// 사람이 지칭하는 TC 표시 ID — 백엔드가 준 displayId(폴더 접두사 반영)를 쓰되, 없으면 기존 TC-### 폴백.
+function tcDisplayId(tc) {
+  return (tc && tc.displayId) ? tc.displayId : `TC-${String(tc?.id ?? 0).padStart(3, "0")}`;
+}
+
+// 런 항목의 표시 ID — 생성 당시 스냅샷된 폴더 접두사 코드 + 케이스 id. 코드 없으면 기존 TC-###.
+function runItemDisplayId(item) {
+  const prefix = item && item.sourceFolderCode ? item.sourceFolderCode : "TC";
+  return `${prefix}-${String(item?.testCaseId ?? 0).padStart(3, "0")}`;
+}
 
 function createTableRow(tc) {
   _tcRowOrder.push(tc.id);
@@ -2627,8 +2746,8 @@ function createTableRow(tc) {
   if (state.tcSelection.has(tc.id)) tr.classList.add("tc-row-selected");
   tr.innerHTML = `
     <td class="tc-select-cell"><input type="checkbox" class="tc-select"${state.tcSelection.has(tc.id) ? " checked" : ""} title="일괄 처리 선택"></td>
-    <td><span class="tc-id" title="드래그하여 폴더 이동 (Shift+클릭으로 여러 개 선택)" style="cursor:grab">⋮ TC-${String(tc.id).padStart(3,"0")}</span></td>
-    <td><span class="tc-ttl">${escapeHtml(tc.title)}</span>${tc.status==="REVIEW_NEEDED"?'<span class="attn-flag">⚠ 검토 필요</span>':""}</td>
+    <td><span class="tc-id" title="드래그하여 폴더 이동 (Shift+클릭으로 여러 개 선택)" style="cursor:grab">⋮ ${escapeHtml(tcDisplayId(tc))}</span></td>
+    <td><span class="tc-ttl">${escapeHtml(tc.title)}</span>${(tc.defects && tc.defects.length) ? `<span class="tc-defect-dot" title="연결된 결함 ${tc.defects.length}건">●</span>` : ""}${tc.status==="REVIEW_NEEDED"?'<span class="attn-flag">⚠ 검토 필요</span>':""}</td>
     <td>${statusBadge(tc.status)}</td>
     <td>${priorityBadge(tc.priority)}</td>
     <td><span class="badge ${tc.type==="FUNCTIONAL"?"b-func":"b-nf"}">${tc.type==="FUNCTIONAL"?"기능":"비기능"}</span></td>
@@ -2870,6 +2989,106 @@ async function bulkDeleteTestCases() {
   await loadTestCases();
 }
 
+// ── 테스트케이스 일괄 필드 수정(상태·우선순위·버전) ────────────────
+// 상태는 전용 PATCH 엔드포인트를 쓰고, 우선순위·버전은 전용 엔드포인트가 없어
+// 캐시된 케이스 전체를 PUT으로 다시 저장한다(변경된 필드만 덮어씀).
+// field: "status" | "priority" | "version"
+async function bulkUpdateTcField(field, value, actionLabel) {
+  const ids = [...state.tcSelection];
+  if (ids.length === 0) return;
+
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try {
+      if (field === "status") {
+        await request(`/api/testcases/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: value }) });
+      } else {
+        const tc = state.allTestCases.find(t => String(t.id) === String(id));
+        if (!tc) { fail++; continue; }
+        await request(`/api/testcases/${id}`, { method: "PUT", body: JSON.stringify(_buildTcPutPayload(tc, { [field]: value })) });
+      }
+      // 캐시도 즉시 갱신 — loadTestCases 전에도 목록이 바로 반영되도록.
+      const inAll = state.allTestCases.find(t => String(t.id) === String(id));
+      if (inAll) inAll[field] = value;
+      const inFiltered = state.testCases.find(t => String(t.id) === String(id));
+      if (inFiltered) inFiltered[field] = value;
+      ok++;
+    } catch (_e) { fail++; }
+  }
+  _toast(fail === 0 ? `${ok}건 ${actionLabel} 완료` : `${ok}건 ${actionLabel}, ${fail}건 실패`, fail > 0);
+  await loadTestCases();
+}
+
+// 캐시된 케이스 객체로부터 전체 PUT 페이로드를 만들고 overrides로 일부 필드를 덮어쓴다.
+// 목록 GET 응답(TestCaseResponse)이 이미 모든 필드를 담고 있어 추가 조회 없이 재구성 가능.
+function _buildTcPutPayload(tc, overrides = {}) {
+  const base = {
+    type: tc.type, priority: tc.priority, status: tc.status,
+    title: tc.title, description: tc.description, precondition: tc.precondition,
+    steps: tc.steps, expectedResult: tc.expectedResult ?? null, notes: tc.notes ?? null,
+    os: tc.os ?? null, browser: tc.browser ?? null, device: tc.device ?? null,
+    areaTagIds: (tc.areaTags || []).map(t => t.id),
+    serverEnvironmentId: tc.serverEnvironment?.id ?? null,
+    testConfigurationId: tc.testConfiguration?.id ?? null,
+    assignee: tc.assignee ?? null,
+    version: tc.version ?? null,
+    // 프론트가 유지하는 폴더 배정을 우선 신뢰하고, 없으면 서버 값으로 폴백.
+    folderId: state.folderAssignments[String(tc.id)] != null
+      ? Number(state.folderAssignments[String(tc.id)])
+      : (tc.folderId ?? null),
+    projectId: state.currentProjectId || null
+  };
+  return { ...base, ...overrides };
+}
+
+// 선택한 테스트케이스들에 영역 태그를 일괄 적용(기존 태그에 병합 추가, 이미 있으면 건너뜀).
+async function bulkApplyAreaTag(tagId) {
+  const ids = [...state.tcSelection];
+  if (ids.length === 0 || !tagId) return;
+  const tag = state.areaTags.find(t => t.id === tagId);
+  let ok = 0, fail = 0, skipped = 0;
+  for (const id of ids) {
+    const tc = state.allTestCases.find(t => String(t.id) === String(id));
+    if (!tc) { fail++; continue; }
+    const current = (tc.areaTags || []).map(t => t.id);
+    if (current.includes(tagId)) { skipped++; continue; } // 이미 붙어 있음
+    const merged = [...new Set([...current, tagId])];
+    try {
+      await request(`/api/testcases/${id}`, { method: "PUT", body: JSON.stringify(_buildTcPutPayload(tc, { areaTagIds: merged })) });
+      // 캐시 즉시 갱신 — loadTestCases 전에도 배지가 바로 반영되도록.
+      if (tag) {
+        const add = { id: tag.id, name: tag.name };
+        const inAll = state.allTestCases.find(t => String(t.id) === String(id));
+        if (inAll) inAll.areaTags = [...(inAll.areaTags || []), add];
+        const inFil = state.testCases.find(t => String(t.id) === String(id));
+        if (inFil && inFil !== inAll) inFil.areaTags = [...(inFil.areaTags || []), add];
+      }
+      ok++;
+    } catch (_e) { fail++; }
+  }
+  const skipMsg = skipped ? ` (이미 적용 ${skipped}건 제외)` : "";
+  _toast(fail === 0 ? `${ok}건에 '${tag?.name ?? "태그"}' 적용 완료${skipMsg}` : `${ok}건 적용, ${fail}건 실패${skipMsg}`, fail > 0);
+  await loadTestCases();
+}
+
+// 새 영역 태그를 만든 뒤(또는 같은 이름이 이미 있으면 그것을) 선택한 케이스들에 일괄 적용한다.
+async function bulkCreateAndApplyAreaTag() {
+  if (state.tcSelection.size === 0) { _toast("먼저 적용할 테스트케이스를 선택하세요.", true); return; }
+  if (!state.currentProjectId) { _toast("프로젝트를 먼저 선택한 뒤 영역 태그를 만들 수 있습니다.", true); return; }
+  const name = await _promptModal({ title: "새 영역 태그 만들어 적용", label: "태그 이름", placeholder: "예: 사진", maxlength: 50 });
+  if (name === null || !name.trim()) return;
+  const trimmed = name.trim();
+  let tag = state.areaTags.find(t => t.name.toLowerCase() === trimmed.toLowerCase());
+  if (!tag) {
+    try {
+      tag = await request("/api/area-tags", { method: "POST", body: JSON.stringify({ name: trimmed, projectId: state.currentProjectId }) });
+      state.areaTags.push(tag);
+      renderTagSelect(); renderFilterAreaTagSelect(); renderAreaTagManageList(); renderBulkAreaTagSelect();
+    } catch (e) { _toast(`태그 생성 실패: ${e.message}`, true); return; }
+  }
+  await bulkApplyAreaTag(tag.id);
+}
+
 // ══════════════════════════════════════════════════════════════════
 // 실행 기록 렌더
 // ══════════════════════════════════════════════════════════════════
@@ -2881,7 +3100,7 @@ function _buildRunItemLi(entry) {
   const versionText = entry.versionLabel || (entry.versionNumber ? `v${entry.versionNumber}` : null);
   const reasonLabel = REASON_REQUIRED_LABEL[entry.status] || "사유";
   li.innerHTML =
-    `<div class="run-dot" style="background:${{PASSED:"var(--c-pass)",FAILED:"var(--c-hi)",BLOCKED:"#777",RETEST:"#b45309"}[entry.status]||"#ccc"}"></div>` +
+    `<div class="run-dot" style="background:${{PASSED:"var(--c-pass)",FAILED:"var(--c-hi)",BLOCKED:"#777",RETEST:"#b45309",NOT_IMPLEMENTED:"#6366f1"}[entry.status]||"#ccc"}"></div>` +
     `<div class="run-info">` +
       `<div class="run-hd">` +
         `<span class="run-status run-status-${escapeHtml(cls)}">${escapeHtml(RESULT_LABEL[entry.status] || entry.status)}</span>` +
@@ -3374,6 +3593,9 @@ function showPlanForm(plan = null) {
   document.getElementById("planStartDate").value = plan?.startDate ?? "";
   document.getElementById("planEndDate").value = plan?.endDate ?? "";
   document.getElementById("deletePlanButton").disabled = !plan;
+  // 복제 버튼은 기존 플랜을 편집할 때만 노출한다(신규 작성 중에는 복제 대상이 없음).
+  const dupBtn = document.getElementById("duplicatePlanButton");
+  if (dupBtn) dupBtn.hidden = !plan;
 
   document.getElementById("planTargetSystem").value = plan?.targetSystem ?? "";
   document.getElementById("planTargetVersion").value = plan?.targetVersion ?? "";
@@ -3458,7 +3680,7 @@ function renderSegmentBar(barEl, c = {}) {
   const total = c.total || 0;
   const seg = (n, cls) => n > 0 ? `<div class="bar-seg ${cls}" style="width:${(n / total) * 100}%"></div>` : "";
   barEl.innerHTML = total === 0 ? "" :
-    seg(c.passed, "pass") + seg(c.failed, "fail") + seg(c.blocked, "block") + seg(c.retest, "retest");
+    seg(c.passed, "pass") + seg(c.failed, "fail") + seg(c.blocked, "block") + seg(c.retest, "retest") + seg(c.notImplemented, "notimpl");
 }
 
 async function loadSuiteRun(suite) {
@@ -3510,7 +3732,7 @@ function renderSuiteRun(suite, latest) {
     row.className = "suite-run-case";
     row.innerHTML =
       `<div class="suite-run-case-hd">` +
-        `<span class="suite-run-tc">TC-${String(tc.id).padStart(3, "0")}</span>` +
+        `<span class="suite-run-tc">${escapeHtml(tcDisplayId(tc))}</span>` +
         `<span class="suite-run-name" title="${escapeHtml(tc.title)}">${escapeHtml(tc.title)}</span>` +
         badge +
       `</div>` +
@@ -3537,7 +3759,7 @@ async function recordSuiteCaseRun(suite, testCase, status, note, latest) {
     });
     latest[testCase.id] = created;
     renderSuiteRun(suite, latest);
-    _toast(`TC-${String(testCase.id).padStart(3, "0")} ${SUITE_RUN_LABEL[status]} 기록됨`);
+    _toast(`${tcDisplayId(testCase)} ${SUITE_RUN_LABEL[status]} 기록됨`);
   } catch (e) { _toast(`실행 기록 실패: ${e.message}`, true); }
 }
 
@@ -3552,7 +3774,7 @@ function renderSuiteCasePicker(selectedIds) {
   state.allTestCases.forEach(testCase => {
     const label = document.createElement("label");
     label.className = "suite-case-option";
-    label.innerHTML = `<input type="checkbox" value="${testCase.id}" ${selected.has(testCase.id) ? "checked" : ""}><span>${escapeHtml(testCase.title)}<small>TC-${String(testCase.id).padStart(3, "0")} · ${escapeHtml(testCase.status)}</small></span>`;
+    label.innerHTML = `<input type="checkbox" value="${testCase.id}" ${selected.has(testCase.id) ? "checked" : ""}><span>${escapeHtml(testCase.title)}<small>${escapeHtml(tcDisplayId(testCase))} · ${escapeHtml(testCase.status)}</small></span>`;
     picker.appendChild(label);
   });
 }
@@ -3631,6 +3853,46 @@ async function deleteSelectedPlan() {
   } catch (error) { _toast(`플랜 삭제 실패: ${error.message}`, true); }
 }
 
+// 현재 편집 중인(저장된) 플랜을 이름만 "(복사본)"으로 바꿔 새 플랜으로 복제한다.
+// JSON 문자열 필드(deviceMatrix/schedule/priorityTargets/riskAnalysis)는 저장된 원본을 그대로 전달한다.
+async function duplicateSelectedPlan() {
+  const plan = state.testPlans.find(p => p.id === state.selectedPlanId);
+  if (!plan) { _toast("복제할 플랜을 먼저 선택하세요.", true); return; }
+  const payload = {
+    name: `${plan.name} (복사본)`,
+    status: plan.status,
+    assignee: plan.assignee ?? null,
+    startDate: plan.startDate ?? null,
+    endDate: plan.endDate ?? null,
+    targetSystem: plan.targetSystem ?? null,
+    targetVersion: plan.targetVersion ?? null,
+    testGoal: plan.testGoal ?? null,
+    testTarget: plan.testTarget ?? null,
+    coreTestCaseIds: (plan.coreTestCases || []).map(tc => tc.id),
+    impactScope: plan.impactScope ?? null,
+    commonScope: plan.commonScope ?? null,
+    priorityTargets: plan.priorityTargets ?? null,
+    riskAnalysis: plan.riskAnalysis ?? null,
+    testApproach: plan.testApproach ?? null,
+    testPerspective: plan.testPerspective ?? null,
+    entryCriteria: plan.entryCriteria ?? null,
+    exitCriteria: plan.exitCriteria ?? null,
+    serverEnvironmentNote: plan.serverEnvironmentNote ?? null,
+    deviceMatrix: plan.deviceMatrix ?? null,
+    testData: plan.testData ?? null,
+    schedule: plan.schedule ?? null,
+    deliverables: plan.deliverables ?? null,
+    projectId: state.currentProjectId || null
+  };
+  try {
+    const saved = await request("/api/test-plans", { method: "POST", body: JSON.stringify(payload) });
+    state.selectedPlanId = saved.id;
+    _toast("테스트 플랜을 복제했습니다.");
+    await loadTestPlans();
+    await selectPlan(saved.id);
+  } catch (error) { _toast(`플랜 복제 실패: ${error.message}`, true); }
+}
+
 async function deleteSelectedSuite() {
   if (!state.selectedPlanId || !state.selectedSuiteId || !window.confirm("테스트 스위트를 삭제할까요?")) return;
   try {
@@ -3648,9 +3910,10 @@ async function deleteSelectedSuite() {
 // 테스트런 (실행 사이클) — 스위트 스냅샷 + 케이스별 결과 기록
 // ══════════════════════════════════════════════════════════════════
 
-const RESULT_LABEL = { UNTESTED: "미실행", PASSED: "통과", FAILED: "실패", BLOCKED: "차단", RETEST: "재테스트" };
-const RESULT_CLASS = { UNTESTED: "untested", PASSED: "passed", FAILED: "failed", BLOCKED: "blocked", RETEST: "retest" };
-const EXEC_STATUS_LABEL = { IN_PROGRESS: "진행 중", COMPLETED: "완료" };
+const RESULT_LABEL = { UNTESTED: "미실행", PASSED: "통과", FAILED: "실패", BLOCKED: "차단", RETEST: "재테스트", NOT_IMPLEMENTED: "미구현" };
+const RESULT_CLASS = { UNTESTED: "untested", PASSED: "passed", FAILED: "failed", BLOCKED: "blocked", RETEST: "retest", NOT_IMPLEMENTED: "notimpl" };
+const EXEC_STATUS_LABEL = { READY: "준비됨", IN_PROGRESS: "진행 중", COMPLETED: "완료" };
+const EXEC_STATUS_CLASS = { READY: "b-ready", IN_PROGRESS: "b-tag", COMPLETED: "b-pass" };
 
 async function loadExecutions() {
   state.apiBaseUrl = getApiBaseUrl();
@@ -3693,7 +3956,7 @@ function buildRunCycleItem(exec) {
   item.innerHTML =
     `<div class="run-cycle-name">${exec.version ? `<span class="badge b-ver">v${escapeHtml(exec.version)}</span> ` : ""}${escapeHtml(exec.name)}</div>` +
     `<div class="run-cycle-meta">` +
-      `<span class="badge ${exec.status === "COMPLETED" ? "b-pass" : "b-tag"}">${EXEC_STATUS_LABEL[exec.status] || exec.status}</span>` +
+      `<span class="badge ${EXEC_STATUS_CLASS[exec.status] || "b-tag"}">${EXEC_STATUS_LABEL[exec.status] || exec.status}</span>` +
       `<span>${done}/${exec.total} (${exec.progressPct}%)</span>` +
       (exec.configurationName ? `<span class="run-cycle-env" title="${escapeHtml(exec.environmentDetail || "실행환경")}">🖥 ${escapeHtml(exec.configurationName)}</span>` : "") +
       (exec.failed ? `<span class="run-cycle-fail">실패 ${exec.failed}</span>` : "") +
@@ -3723,6 +3986,47 @@ function groupItemsBySuite(items) {
     groups[indexByKey.get(key)].items.push(item);
   });
   return groups;
+}
+
+// 런 항목을 출처 폴더(섹션)별로 묶는다 — 폴더가 없던(미분류) 항목은 "미분류"로 모은다.
+function groupItemsByFolder(items) {
+  const groups = [];
+  const indexByKey = new Map();
+  items.forEach(item => {
+    const key = item.sourceFolderId ?? "__nofolder__";
+    if (!indexByKey.has(key)) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        key,
+        folderId: item.sourceFolderId ?? null,
+        folderName: item.sourceFolderId ? (item.sourceFolderName || "이름 없는 폴더") : "미분류",
+        items: []
+      });
+    }
+    groups[indexByKey.get(key)].items.push(item);
+  });
+  return groups;
+}
+
+// 주어진 항목들을 폴더별 하위 헤더와 함께 컨테이너에 붙인다.
+// 폴더가 실제로 여러 개거나(섞임), 단일이라도 실제 폴더에 속할 때만 헤더를 노출한다
+// (폴더 미지정 항목만 있는 경우엔 "미분류" 헤더가 군더더기라 생략).
+function appendItemsGroupedByFolder(cont, items, isCompleted, buildFn) {
+  const folderGroups = groupItemsByFolder(items);
+  // 폴더가 2개 이상 섞였을 때만 헤더로 구분한다 — 한 폴더뿐이면(스위트=폴더 1:1 포함)
+  // 헤더가 군더더기라 생략해 화면을 깔끔하게 유지한다.
+  const showFolderHeaders = folderGroups.length > 1;
+  if (!showFolderHeaders) {
+    items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+    return;
+  }
+  folderGroups.forEach(fg => {
+    const fh = document.createElement("div");
+    fh.className = "run-item-folder-hd";
+    fh.innerHTML = `<span class="run-item-folder-name">📁 ${escapeHtml(fg.folderName)}</span><span class="badge b-tag">${fg.items.length}</span>`;
+    cont.appendChild(fh);
+    fg.items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+  });
 }
 
 // 같은 테스트 플랜에 속한 런들을 플랜 단위 섹션으로 묶어서 표시 — 플랜이 없는 런은 "플랜 미지정" 섹션으로.
@@ -3826,6 +4130,7 @@ function donutSvg(c) {
     { n: c.failed,  color: "var(--c-fail)" },
     { n: c.blocked, color: "#b45309" },
     { n: c.retest,  color: "#d97706" },
+    { n: c.notImplemented, color: "#6366f1" },
     { n: c.untested, color: "#e5e5e3" }
   ].filter(s => s.n > 0);
   let offset = 0;
@@ -4042,18 +4347,18 @@ function renderExecutionDetail(exec) {
 
   const statusBadge = document.getElementById("runDetailStatus");
   statusBadge.textContent = EXEC_STATUS_LABEL[exec.status] || exec.status;
-  statusBadge.className = `badge ${isCompleted ? "b-pass" : "b-tag"}`;
+  statusBadge.className = `badge ${EXEC_STATUS_CLASS[exec.status] || "b-tag"}`;
 
   document.getElementById("runCompleteButton").textContent = isCompleted ? "다시 열기" : "완료 처리";
 
   const done = exec.total - exec.untested;
-  const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
+  const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, notImplemented: exec.notImplemented, untested: exec.untested };
   const completedAt = exec.completedAt ? formatDateTime(exec.completedAt) : "";
 
   const report = document.getElementById("runDetailReport");
 
   // ── 런 대시보드: 도넛 + 요약 — '진척도·통계' 버튼으로 토글 ──
-  const executed = exec.passed + exec.failed + exec.blocked + exec.retest;
+  const executed = exec.passed + exec.failed + exec.blocked + exec.retest + (exec.notImplemented || 0);
   const progressPct = typeof exec.progressPct === "number"
     ? exec.progressPct
     : (exec.total ? Math.round((done / exec.total) * 100) : 0);
@@ -4091,10 +4396,10 @@ function renderExecutionDetail(exec) {
           .addEventListener("click", () => removeSuiteFromRun(group.suiteId, group.suiteName));
       }
       cont.appendChild(header);
-      group.items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+      appendItemsGroupedByFolder(cont, group.items, isCompleted, buildFn);
     });
   } else {
-    items.forEach(item => cont.appendChild(buildFn(item, isCompleted)));
+    appendItemsGroupedByFolder(cont, items, isCompleted, buildFn);
   }
   const addSuiteBtn = document.getElementById("runAddSuiteButton");
   if (addSuiteBtn) addSuiteBtn.disabled = isCompleted;
@@ -4106,6 +4411,7 @@ function runChips(exec) {
     `<span class="suite-run-chip fail">실패 ${exec.failed}</span>` +
     `<span class="suite-run-chip block">차단 ${exec.blocked}</span>` +
     `<span class="suite-run-chip retest">재테스트 ${exec.retest}</span>` +
+    (exec.notImplemented ? `<span class="suite-run-chip notimpl">미구현 ${exec.notImplemented}</span>` : "") +
     (exec.untested ? `<span class="suite-run-chip">미실행 ${exec.untested}</span>` : "");
 }
 
@@ -4115,8 +4421,8 @@ function renderRunProgress(exec) {
   const report = document.getElementById("runDetailReport");
   // 숨김 상태여도 DOM은 갱신해 둔다 — '진척도·통계'를 열었을 때 즉시 최신값이 보이도록.
   if (report && report.querySelector(".run-report-chart")) {
-    const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, untested: exec.untested };
-    const executed = exec.passed + exec.failed + exec.blocked + exec.retest;
+    const counts = { total: exec.total, passed: exec.passed, failed: exec.failed, blocked: exec.blocked, retest: exec.retest, notImplemented: exec.notImplemented, untested: exec.untested };
+    const executed = exec.passed + exec.failed + exec.blocked + exec.retest + (exec.notImplemented || 0);
     const progressPct = typeof exec.progressPct === "number"
       ? exec.progressPct
       : (exec.total ? Math.round((done / exec.total) * 100) : 0);
@@ -4278,7 +4584,7 @@ function buildRunItemRow(item, isCompleted) {
   const head =
     `<div class="suite-run-case-hd">` +
       checkbox +
-      `<span class="suite-run-tc">TC-${String(item.testCaseId).padStart(3, "0")}</span>` +
+      `<span class="suite-run-tc">${escapeHtml(runItemDisplayId(item))}</span>` +
       `<span class="case-detail-toggle">▸</span>` +
       `<span class="suite-run-name" title="${escapeHtml(item.caseTitle)}">${escapeHtml(item.caseTitle)}</span>` +
       defectFlag +
@@ -4316,6 +4622,7 @@ function buildRunItemRow(item, isCompleted) {
       `<button type="button" class="btn btn-sm suite-run-btn fail${act("FAILED")}" data-s="FAILED">실패</button>` +
       `<button type="button" class="btn btn-sm suite-run-btn block${act("BLOCKED")}" data-s="BLOCKED">차단</button>` +
       `<button type="button" class="btn btn-sm suite-run-btn retest${act("RETEST")}" data-s="RETEST">재테스트</button>` +
+      `<button type="button" class="btn btn-sm suite-run-btn nt${act("NOT_IMPLEMENTED")}" data-s="NOT_IMPLEMENTED" title="기능이 아직 구현되지 않음">미구현</button>` +
     `</div>` + detailBody;
   const note = row.querySelector(".suite-run-note");
   row.querySelectorAll(".suite-run-btn").forEach(btn => {
@@ -4821,7 +5128,7 @@ async function handleSubmit(event) {
       // ── 수정 ──
       const updated = await request(`/api/testcases/${id}`, { method: "PUT", body: JSON.stringify(payload) });
       saveFolderAssignment(updated.id);
-      _toast(`TC-${String(updated.id).padStart(3,"0")} 수정 완료`);
+      _toast(`${tcDisplayId(updated)} 수정 완료`);
       setFlowStage("saved", "수정이 반영됐습니다.");
       await loadTestCases();
       const refreshed = state.allTestCases.find(tc => String(tc.id) === id);
@@ -4830,7 +5137,7 @@ async function handleSubmit(event) {
       // ── 생성 ──
       const created = await request("/api/testcases", { method: "POST", body: JSON.stringify(payload) });
       saveFolderAssignment(created.id, true);  // isNew: 선택된 폴더 자동 배정
-      _toast(`TC-${String(created.id).padStart(3,"0")} 생성 완료`);
+      _toast(`${tcDisplayId(created)} 생성 완료`);
       setFlowStage("saved", "저장됐습니다. 실행 결과를 기록할 수 있습니다.");
       await loadTestCases();
       const createdItem = state.allTestCases.find(tc => tc.id === created.id);
@@ -5078,12 +5385,43 @@ async function bootstrap() {
   document.getElementById("tcBulkDeleteBtn")?.addEventListener("click", bulkDeleteTestCases);
   document.getElementById("tcBulkClearBtn")?.addEventListener("click", clearTcSelection);
 
+  document.getElementById("tcBulkStatus")?.addEventListener("change", async e => {
+    const value = e.target.value; if (!value) return;
+    await bulkUpdateTcField("status", value, "상태 변경");
+    e.target.value = "";
+  });
+  document.getElementById("tcBulkPriority")?.addEventListener("change", async e => {
+    const value = e.target.value; if (!value) return;
+    await bulkUpdateTcField("priority", value, "우선순위 변경");
+    e.target.value = "";
+  });
+  document.getElementById("tcBulkAreaTag")?.addEventListener("change", async e => {
+    const value = e.target.value; if (!value) return;
+    e.target.value = "";
+    if (value === "__new__") await bulkCreateAndApplyAreaTag();
+    else await bulkApplyAreaTag(Number(value));
+  });
+  const applyBulkVersion = async () => {
+    const input = document.getElementById("tcBulkVersion");
+    const value = input.value.trim();
+    if (!value) { _toast("적용할 버전 라벨을 입력하세요.", true); return; }
+    if (state.tcSelection.size === 0) return;
+    if (!window.confirm(`선택한 ${state.tcSelection.size}건의 버전을 "${value}"(으)로 변경할까요?`)) return;
+    await bulkUpdateTcField("version", value, "버전 변경");
+    input.value = "";
+  };
+  document.getElementById("tcBulkVersionBtn")?.addEventListener("click", applyBulkVersion);
+  document.getElementById("tcBulkVersion")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); applyBulkVersion(); }
+  });
+
   document.getElementById("newPlanButton").addEventListener("click", () => showPlanForm());
   document.getElementById("newSuiteButton")?.addEventListener("click", () => showSuiteForm());
   document.getElementById("newSuiteFolderButton")?.addEventListener("click", addSuiteFolder);
   document.getElementById("planForm").addEventListener("submit", savePlan);
   document.getElementById("suiteForm").addEventListener("submit", saveSuite);
   document.getElementById("deletePlanButton").addEventListener("click", deleteSelectedPlan);
+  document.getElementById("duplicatePlanButton")?.addEventListener("click", duplicateSelectedPlan);
   document.getElementById("deleteSuiteButton").addEventListener("click", deleteSelectedSuite);
   document.getElementById("suiteEditButton").addEventListener("click", () => showSuiteForm(state.testSuites.find(s => s.id === state.selectedSuiteId)));
   document.getElementById("suiteRunFromEditButton").addEventListener("click", () => showSuiteRun());
@@ -5109,7 +5447,6 @@ async function bootstrap() {
     renderExecutionList();
   });
   document.getElementById("runBulkSelectAll").addEventListener("change", e => toggleSelectAllItems(e.target.checked));
-  document.getElementById("runBulkClear").addEventListener("click", clearRunItemSelection);
   document.querySelectorAll("#runBulkBar .run-bulk-actions [data-s]").forEach(btn => {
     btn.addEventListener("click", () => applyBulkResult(btn.dataset.s));
   });
@@ -5764,6 +6101,29 @@ async function refreshDashboardAuditLogs() {
   renderDashboardAuditLogsFromStats(stats);
 }
 
+// 결함 히트맵 매트릭스 — 행=영역태그, 열=심각도. 칸 색 농도는 그 칸의 결함 수(전체 최대 대비).
+const HEATMAP_SEVERITIES = [
+  { key: "CRITICAL", label: "Critical", rgb: "220,38,38" },
+  { key: "MAJOR",    label: "Major",    rgb: "234,88,12" },
+  { key: "MINOR",    label: "Minor",    rgb: "202,138,4" },
+  { key: "TRIVIAL",  label: "Trivial",  rgb: "107,114,128" },
+];
+function _buildHeatmapMatrix(rows) {
+  let maxCell = 1;
+  rows.forEach(r => HEATMAP_SEVERITIES.forEach(s => { maxCell = Math.max(maxCell, (r.bySeverity && r.bySeverity[s.key]) || 0); }));
+  const head = `<tr><th class="hm-corner">영역</th>${HEATMAP_SEVERITIES.map(s => `<th class="hm-sev">${s.label}</th>`).join("")}<th class="hm-total">합계</th></tr>`;
+  const body = rows.map(r => {
+    const cells = HEATMAP_SEVERITIES.map(s => {
+      const n = (r.bySeverity && r.bySeverity[s.key]) || 0;
+      const alpha = n === 0 ? 0 : (0.18 + 0.82 * (n / maxCell));
+      const style = n === 0 ? "" : `background:rgba(${s.rgb},${alpha.toFixed(3)});color:${alpha > 0.55 ? "#fff" : "var(--text-primary)"}`;
+      return `<td class="hm-cell" style="${style}" title="${escapeHtml(r.areaTag)} · ${s.label}: ${n}건">${n || ""}</td>`;
+    }).join("");
+    return `<tr><th class="hm-area" title="${escapeHtml(r.areaTag)}">${escapeHtml(r.areaTag)}</th>${cells}<td class="hm-total-cell">${r.total}</td></tr>`;
+  }).join("");
+  return `<div class="heatmap-scroll"><table class="heatmap-matrix">${head}${body}</table></div>`;
+}
+
 function renderDashboardAuditLogsFromStats(stats) {
   const listEl = document.getElementById("dashAuditList");
   const heatEl = document.getElementById("dashHeatmap");
@@ -5771,15 +6131,11 @@ function renderDashboardAuditLogsFromStats(stats) {
   try {
     if (!stats) throw new Error("no stats");
 
-    // 히트맵
+    // 히트맵 (영역 × 심각도 매트릭스)
     if (heatEl && stats.defectHeatmap?.length) {
-      const max = Math.max(...stats.defectHeatmap.map(h => h.count), 1);
-      heatEl.innerHTML = stats.defectHeatmap.map(h => {
-        const lvl = Math.ceil((h.count / max) * 4);
-        return `<div class="heatmap-cell lvl-${lvl}" title="${escapeHtml(h.areaTag)}: ${h.count}건">${escapeHtml(h.areaTag)}<br><strong>${h.count}</strong></div>`;
-      }).join("");
+      heatEl.innerHTML = _buildHeatmapMatrix(stats.defectHeatmap);
     } else if (heatEl) {
-      heatEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">데이터 없음</span>';
+      heatEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">데이터 없음 — 영역 태그와 결함이 모두 연결된 케이스가 있어야 표시됩니다.</span>';
     }
 
     // 감사 로그

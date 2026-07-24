@@ -51,6 +51,17 @@ public class ExecutionItem {
     @Column(length = 200)
     private String sourceSuiteName;
 
+    // 이 항목이 생성될 당시 케이스가 속해 있던 출처 폴더 스냅샷 — 런 안에서 폴더(섹션)별로 묶어 보여주기 위함
+    // (FK 미사용, 폴더가 삭제·이동돼도 당시 소속을 보존).
+    private Long sourceFolderId;
+
+    @Column(length = 200)
+    private String sourceFolderName;
+
+    // 생성 당시 폴더의 유효 접두사 코드(상속 반영) 스냅샷 — 런 항목의 표시 ID(예: LOGIN-007)를 위해.
+    @Column(length = 20)
+    private String sourceFolderCode;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private ResultStatus status;
@@ -83,6 +94,11 @@ public class ExecutionItem {
 
     public ExecutionItem(Execution execution, Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
                           Long sourceSuiteId, String sourceSuiteName) {
+        this(execution, testCaseId, caseTitle, versionNumber, versionLabel, sourceSuiteId, sourceSuiteName, null, null, null);
+    }
+
+    public ExecutionItem(Execution execution, Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
+                          Long sourceSuiteId, String sourceSuiteName, Long sourceFolderId, String sourceFolderName, String sourceFolderCode) {
         this.execution = execution;
         this.testCaseId = testCaseId;
         this.caseTitle = caseTitle;
@@ -90,6 +106,9 @@ public class ExecutionItem {
         this.versionLabel = versionLabel;
         this.sourceSuiteId = sourceSuiteId;
         this.sourceSuiteName = sourceSuiteName;
+        this.sourceFolderId = sourceFolderId;
+        this.sourceFolderName = sourceFolderName;
+        this.sourceFolderCode = sourceFolderCode;
         this.status = ResultStatus.UNTESTED;
     }
 
@@ -122,6 +141,9 @@ public class ExecutionItem {
     public String getVersionLabel() { return versionLabel; }
     public Long getSourceSuiteId() { return sourceSuiteId; }
     public String getSourceSuiteName() { return sourceSuiteName; }
+    public Long getSourceFolderId() { return sourceFolderId; }
+    public String getSourceFolderName() { return sourceFolderName; }
+    public String getSourceFolderCode() { return sourceFolderCode; }
     public ResultStatus getStatus() { return status; }
     public String getComment() { return comment; }
     public String getFailureReason() { return failureReason; }

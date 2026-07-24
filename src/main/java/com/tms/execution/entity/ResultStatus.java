@@ -9,5 +9,6 @@ public enum ResultStatus {
     FAILED,
     BLOCKED,
     RETEST,
+    NOT_IMPLEMENTED, // 기능 자체가 아직 구현되지 않아 테스트 대상이 없음 (미구현 / NT)
     SKIPPED        // 레거시 하위 호환
 }

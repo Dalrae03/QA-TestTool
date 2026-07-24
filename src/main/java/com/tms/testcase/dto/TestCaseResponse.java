@@ -15,6 +15,7 @@ import java.util.List;
 
 public record TestCaseResponse(
         Long id,
+        String displayId,
         TestCaseType type,
         TestCasePriority priority,
         TestCaseStatus status,
@@ -46,12 +47,24 @@ public record TestCaseResponse(
     }
 
     /**
+     * 사람이 읽고 지칭하기 위한 표시 ID — 폴더 접두사(상위 상속 포함) + 3자리 내부 id.
+     * 폴더 코드가 없으면 기존과 동일하게 "TC" 접두사를 쓴다. 내부 id는 불변이라 참조 안정성이 유지된다.
+     * 예: 로그인 폴더(code=LOGIN)의 7번 케이스 → "LOGIN-007", 코드 없으면 "TC-007".
+     */
+    private static String buildDisplayId(TestCase testCase) {
+        String code = testCase.getFolder() == null ? null : testCase.getFolder().effectiveCode();
+        String prefix = (code != null && !code.isBlank()) ? code : "TC";
+        return prefix + "-" + String.format("%03d", testCase.getId());
+    }
+
+    /**
      * currentVersionLabel: 목록 등에서 "현재 버전"으로 보여줄 라벨.
      * 사용자가 버전 필드를 직접 입력하지 않았을 때는 호출부에서 최신 TestCaseVersion의 라벨로 폴백해 넘겨준다.
      */
     public static TestCaseResponse from(TestCase testCase, String currentVersionLabel) {
         return new TestCaseResponse(
                 testCase.getId(),
+                buildDisplayId(testCase),
                 testCase.getType(),
                 testCase.getPriority(),
                 testCase.getStatus(),

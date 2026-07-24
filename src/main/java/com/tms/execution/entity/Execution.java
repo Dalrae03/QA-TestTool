@@ -95,7 +95,7 @@ public class Execution {
         this.suiteName = suiteName;
         this.assignee = assignee;
         this.version = version;
-        this.status = ExecutionStatus.IN_PROGRESS;
+        this.status = ExecutionStatus.READY;
     }
 
     public void addItem(Long testCaseId, String caseTitle) {
@@ -109,6 +109,12 @@ public class Execution {
     public void addItem(Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
                          Long sourceSuiteId, String sourceSuiteName) {
         this.items.add(new ExecutionItem(this, testCaseId, caseTitle, versionNumber, versionLabel, sourceSuiteId, sourceSuiteName));
+    }
+
+    public void addItem(Long testCaseId, String caseTitle, Integer versionNumber, String versionLabel,
+                         Long sourceSuiteId, String sourceSuiteName, Long sourceFolderId, String sourceFolderName, String sourceFolderCode) {
+        this.items.add(new ExecutionItem(this, testCaseId, caseTitle, versionNumber, versionLabel,
+                sourceSuiteId, sourceSuiteName, sourceFolderId, sourceFolderName, sourceFolderCode));
     }
 
     public void updatePlan(Long testPlanId, String planName) {
@@ -138,10 +144,17 @@ public class Execution {
     public void setStatus(ExecutionStatus status) {
         if (status == ExecutionStatus.COMPLETED && this.status != ExecutionStatus.COMPLETED) {
             this.completedAt = LocalDateTime.now();
-        } else if (status == ExecutionStatus.IN_PROGRESS) {
+        } else if (status == ExecutionStatus.IN_PROGRESS || status == ExecutionStatus.READY) {
             this.completedAt = null;
         }
         this.status = status;
+    }
+
+    /** 첫 실제 결과가 기록되면 '준비됨' 런을 '진행 중'으로 자동 전환한다. (이미 진행 중·완료면 그대로) */
+    public void startIfReady() {
+        if (this.status == ExecutionStatus.READY) {
+            setStatus(ExecutionStatus.IN_PROGRESS);
+        }
     }
 
     public Long getId() { return id; }

@@ -157,6 +157,9 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .plan-form[hidden] { display: none; }
 .plan-editor-title { font-family: var(--font-title); font-size: 17px; font-weight: 700; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 #planFormTitle { border-bottom: none; }
+.plan-editor-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.plan-editor-header .plan-editor-title { padding-bottom: 0; }
+#duplicatePlanButton[hidden] { display: none; }
 .plan-form-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
 .action-group { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .suite-case-picker { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-input); max-height: 320px; overflow-y: auto; }
@@ -176,6 +179,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .bar-seg.fail { background: var(--c-fail); }
 .bar-seg.block { background: #b45309; }
 .bar-seg.retest { background: #d97706; }
+.bar-seg.notimpl { background: #6366f1; }
 .suite-run-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; }
 .suite-run-prog { font-weight: 700; color: var(--text-secondary); margin-right: 4px; }
 .suite-run-chip { padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
@@ -183,6 +187,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .suite-run-chip.fail { background: var(--c-fail-bg); color: var(--c-fail); }
 .suite-run-chip.block { background: #f3f4f6; color: #4b5563; }
 .suite-run-chip.retest { background: #fef3c7; color: #b45309; }
+.suite-run-chip.notimpl { background: #eef2ff; color: #4f46e5; }
 .suite-run-chip.done { background: var(--c-done-bg); color: var(--c-done); }
 .suite-run-cases { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
 .suite-run-case { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-input); padding: 10px; }
@@ -194,6 +199,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .suite-run-badge.passed { background: var(--c-pass-bg); color: var(--c-pass); }
 .suite-run-badge.failed { background: var(--c-fail-bg); color: var(--c-fail); }
 .suite-run-badge.blocked { background: #f3f4f6; color: #4b5563; }
+.suite-run-badge.notimpl { background: #eef2ff; color: #4f46e5; }
 .suite-run-badge.none { background: #f3f4f6; color: #9ca3af; }
 .suite-run-case.is-locked { background: #fafafa; }
 /* 결함 연결 케이스 강조 — 붉은 좌측 보더 + 눈에 띄는 배지로 한눈에 스캔되게 */
@@ -207,6 +213,7 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .suite-run-btn.fail:hover { background: var(--c-fail-bg); color: var(--c-fail); border-color: var(--c-fail); }
 .suite-run-btn.block:hover { background: #f3f4f6; color: #4b5563; }
 .suite-run-btn.retest:hover { background: #fef3c7; color: #b45309; border-color: #f59e0b; }
+.suite-run-btn.nt:hover { background: #eef2ff; color: #4f46e5; border-color: #818cf8; }
 
 /* 테스트런 (실행 사이클) 뷰 */
 .run-workspace { display: flex; flex: 1; gap: 8px; padding: 16px 24px 24px; overflow: hidden; }
@@ -246,9 +253,13 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .run-cycle-env { color: var(--text-muted); }
 .run-detail { display: flex; flex-direction: column; gap: 4px; }
 .run-detail[hidden] { display: none; }
-.run-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+/* 카테고리 칩(액션)을 위에, 런 제목·버전·소문구를 그 아래에 세로로 쌓는다 —
+   런 이름이 길어도 제목이 좁은 열에 밀려 세로로 끊기지 않도록. */
+.run-detail-head { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
 .run-detail-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-.run-detail-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.run-detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-start; order: -1; }
+/* 세로 스택에서는 제목 자체의 밑줄을 없애 제목과 소문구가 한 덩어리로 붙게 한다. */
+.run-detail-head .plan-editor-title { padding-bottom: 0; border-bottom: none; }
 .run-detail-items { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
 .run-item-comment { font-size: 12px; color: var(--text-secondary); margin-top: 6px; padding-left: 2px; }
 
@@ -258,6 +269,12 @@ textarea.form-input { resize: vertical; min-height: 80px; }
 .run-item-suite-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-suite-remove { flex: none; border: 1px solid var(--border); background: transparent; color: var(--danger, #c0392b); font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; cursor: pointer; text-transform: none; letter-spacing: 0; }
 .run-suite-remove:hover { background: var(--danger, #c0392b); color: #fff; }
+/* 런 항목 폴더(섹션) 하위 헤더 — 스위트 그룹 안 또는 직접 선택 런에서 폴더별로 한 번 더 구분 */
+.run-item-folder-hd { display: flex; align-items: center; gap: 6px; padding: 6px 4px 2px 12px; font-size: 10px; font-weight: 600; color: var(--text-muted); letter-spacing: .02em; }
+.run-item-folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 폴더 트리의 TC 접두사 코드 배지 — 상속된 코드는 흐리게 표시 */
+.folder-code-badge { flex: none; margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: var(--c-func-bg, #eef2ff); color: var(--c-func, #4f46e5); font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.folder-code-badge[data-inherited] { opacity: .5; font-weight: 600; }
 
 /* 완료 리포트 (TestRail식) */
 .run-report { display: flex; align-items: center; gap: 24px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 22px; margin: 10px 0 4px; box-shadow: var(--shadow); }
@@ -426,9 +443,12 @@ table.ctbl tr.tc-row-selected td { background: #eff6ff; }
 .tc-select-cell { text-align: center; }
 .tc-select-cell input, #tcSelectAll { cursor: pointer; }
 /* 일괄 처리 바 — 케이스 선택 시 목록 위에 나타난다 */
-.tc-bulk-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: #eff6ff; border-bottom: 1px solid var(--border); }
+.tc-bulk-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 8px 14px; background: #eff6ff; border-bottom: 1px solid var(--border); }
 .tc-bulk-bar[hidden] { display: none; }
 .tc-bulk-count { font-size: 12px; font-weight: 700; color: var(--text-primary); margin-right: auto; }
+.tc-bulk-edit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tc-bulk-select { height: 28px; padding: 0 8px; font-size: 12px; width: auto; min-width: 116px; }
+.tc-bulk-version { height: 28px; padding: 0 8px; font-size: 12px; width: 150px; }
 /* 그룹 헤더 행 — 클릭해서 접고 펼칠 수 있다 */
 .grp-row { cursor: pointer; user-select: none; }
 .grp-row td { background: var(--bg-app); padding: 6px 12px; font-size: 10px; font-weight: 700; color: var(--text-muted); border-bottom: 1px solid var(--border); letter-spacing: .05em; }
@@ -650,6 +670,7 @@ table.ctbl tr:not(.tc-row-dragging):hover td { background: #f9f9f7; }
 .run-status-skipped     { background: rgba(73,56,42,.08); color: var(--text-muted); }
 .run-status-in_progress { background: var(--c-ready-bg); color: var(--c-ready); }
 .run-status-retest      { background: var(--c-review-bg); color: var(--c-review); }
+.run-status-notimpl     { background: #eef2ff; color: #4f46e5; }
 .run-status-not_executed { background: rgba(73,56,42,.06); color: var(--text-muted); }
 
 /* 폴더 단위 실행 기록 개요 */
@@ -801,6 +822,16 @@ table.ctbl tr:not(.tc-row-dragging):hover td { background: #f9f9f7; }
 .heatmap-cell.lvl-2 { background: #fde68a; color: #78350f; }
 .heatmap-cell.lvl-3 { background: #f97316; color: #fff; }
 .heatmap-cell.lvl-4 { background: #dc2626; color: #fff; }
+/* TC 목록 — 결함이 연결된 케이스 표시(빨간 점) */
+.tc-defect-dot { color: #dc2626; font-size: 9px; margin-left: 6px; vertical-align: middle; cursor: default; }
+/* 결함 히트맵 매트릭스 (영역 × 심각도) */
+.heatmap-scroll { overflow-x: auto; }
+.heatmap-matrix { border-collapse: collapse; width: 100%; font-size: 12px; }
+.heatmap-matrix th, .heatmap-matrix td { border: 1px solid var(--border); padding: 6px 8px; text-align: center; }
+.heatmap-matrix .hm-corner, .heatmap-matrix .hm-area { text-align: left; font-weight: 600; white-space: nowrap; background: var(--bg-panel2); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.heatmap-matrix .hm-sev, .heatmap-matrix .hm-total { font-size: 11px; font-weight: 600; color: var(--text-secondary); background: var(--bg-panel2); }
+.heatmap-matrix .hm-cell { font-weight: 700; min-width: 46px; color: var(--text-muted); }
+.heatmap-matrix .hm-total-cell { font-weight: 700; background: var(--bg-panel2); }
 
 /* 대시보드 최근 활동 로그 — 최대 높이 제한 + 내부 스크롤(버전 이력과 동일한 패턴) */
 .dash-audit-list { max-height: 220px; overflow-y: auto; padding-right: 2px; }

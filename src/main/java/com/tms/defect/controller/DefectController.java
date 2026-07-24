@@ -27,8 +27,8 @@ public class DefectController {
     }
 
     @GetMapping
-    public List<DefectResponse> getAll() {
-        return defectService.getAll();
+    public List<DefectResponse> getAll(@org.springframework.web.bind.annotation.RequestParam(required = false) Long projectId) {
+        return defectService.getAll(projectId);
     }
 
     @GetMapping("/{id}")
