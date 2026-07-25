@@ -46,6 +46,22 @@ npm run dev                  # http://localhost:5173 에서 "연결 성공" 확�
 - [ ] 기존 MySQL 데이터 → Supabase 이관 스크립트
 
 ## 현재 상태
-- ✅ Postgres 스키마 초안 (`supabase/migrations/0001_initial_schema.sql`)
-- ✅ 웹앱 스캐폴드 + Supabase 클라이언트 + 연결 확인 화면
-- ⬜ 계정/자격증명 (사용자 준비 필요) → 이후 실제 연결·배포
+- ✅ Postgres 스키마 (`supabase/migrations/0001`, 개발 RLS `0002`, 드리프트 보정 `0003`)
+- ✅ 웹앱 스캐폴드 + Supabase 클라이언트 + 연결 확인
+- ✅ **전송 어댑터** — 데스크톱 `renderer.js`를 무수정으로 재사용하고,
+  `window.desktopApi.request(...)`를 Supabase(PostgREST) 쿼리로 라우팅 (`src/adapter/`)
+- ✅ **테스트케이스 관리 화면 전체** 동작 (부팅 로드 + TC/폴더/태그/환경/컨피그/사용자/결함 CRUD)
+- ✅ **테스트 플랜 · 스위트(플랜소속/독립)** 전체 CRUD (`src/adapter/runs.js`)
+- ✅ **테스트런(실행) · 레거시 케이스별 런** — 조회는 즉시 동작.
+  생성/결과기록은 **마이그레이션 `0004` 적용 필요**(executions 'READY' 상태·항목 상태 확장·폴더 스냅샷 컬럼)
+- ⬜ 대시보드 통계(`/api/dashboard/stats`) · Jira — 후속 슬라이스 (현재 501)
+- ⬜ 첨부파일(→ Storage) · 엑셀 임포트 · 백업/복구
+- ⬜ 운영용 RLS 정책 (현재 `0002` 개발 전면 허용)
+
+### 아키텍처 (어댑터 방식)
+```
+index.html ─▶ src/main.js ─▶ installDesktopApi()  (window.desktopApi = Supabase 어댑터)
+                         └─▶ /renderer.js 주입      (데스크톱 원본, 무수정)
+renderer.js: request("/api/testcases") ─▶ 어댑터가 경로 파싱 ─▶ supabase.from("test_cases")...
+```
+`src/adapter/index.js`에 라우트를 추가하는 방식으로 나머지 도메인을 점진 이식한다.
