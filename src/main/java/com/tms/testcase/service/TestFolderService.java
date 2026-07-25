@@ -38,6 +38,7 @@ public class TestFolderService {
     public TestFolderResponse createFolder(TestFolderRequest request) {
         TestFolder parent = loadParent(request.parentId());
         TestFolder folder = new TestFolder(request.name(), parent, request.projectId());
+        folder.changeCode(normalizeCode(request.code()));
         return TestFolderResponse.from(testFolderRepository.save(folder));
     }
 
@@ -52,8 +53,16 @@ public class TestFolderService {
         }
         TestFolder parent = loadParent(request.parentId());
         folder.rename(request.name());
+        folder.changeCode(normalizeCode(request.code()));
         folder.move(parent);
         return TestFolderResponse.from(folder);
+    }
+
+    /** 접두사 코드를 정규화한다 — 공백 제거 후 대문자로 통일, 비어 있으면 null(상위 상속). */
+    private String normalizeCode(String code) {
+        if (code == null) return null;
+        String trimmed = code.trim();
+        return trimmed.isEmpty() ? null : trimmed.toUpperCase();
     }
 
     @Transactional

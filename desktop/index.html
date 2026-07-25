@@ -120,12 +120,12 @@
         <span class="badge b-review" id="dashIssueCount">0건</span>
       </div>
       <div id="dashIssueList">
-        <p style="font-size:12px;color:var(--text-muted)">검토가 필요한 이슈가 없습니다.</p>
+        <p style="font-size:12px;color:var(--text-muted)">미해결 결함이 없습니다.</p>
       </div>
     </div>
     <!-- 결함 히트맵 (#13) -->
     <div class="detail-card">
-      <div class="detail-card-ttl">결함 히트맵 (영역별 실패 빈도)</div>
+      <div class="detail-card-ttl">결함 히트맵 (영역 × 심각도)</div>
       <div id="dashHeatmap" class="heatmap-grid">
         <span style="font-size:12px;color:var(--text-muted)">데이터 없음</span>
       </div>
@@ -196,7 +196,8 @@
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           <div class="sort-menu" id="sortMenu">
-            <div class="sort-item active" onclick="setSort(this,'updated_desc','최신 수정순')">최신 수정순</div>
+            <div class="sort-item active" onclick="setSort(this,'id_asc','ID 순')">ID 순</div>
+            <div class="sort-item" onclick="setSort(this,'updated_desc','최신 수정순')">최신 수정순</div>
             <div class="sort-item" onclick="setSort(this,'title_asc','제목 A→Z')">제목 A→Z</div>
             <div class="sort-item" onclick="setSort(this,'priority_desc','우선순위 HIGH→LOW')">우선순위 HIGH→LOW</div>
             <div class="sort-item" onclick="setSort(this,'status_asc','상태 순')">상태 순</div>
@@ -263,6 +264,26 @@
           <div id="tcBulkBar" class="tc-bulk-bar" hidden>
             <span id="tcBulkCount" class="tc-bulk-count">0개 선택됨</span>
             <span class="tc-bulk-hint" style="font-size:11px;color:var(--text-muted)">선택한 항목을 드래그하면 한꺼번에 폴더로 이동합니다</span>
+            <div class="tc-bulk-edit">
+              <select id="tcBulkStatus" class="form-input tc-bulk-select" title="선택한 케이스의 상태를 일괄 변경">
+                <option value="">상태 일괄…</option>
+                <option value="DRAFT">DRAFT</option>
+                <option value="REVIEW_NEEDED">REVIEW</option>
+                <option value="READY">READY</option>
+                <option value="COMPLETED">DONE</option>
+              </select>
+              <select id="tcBulkPriority" class="form-input tc-bulk-select" title="선택한 케이스의 우선순위를 일괄 변경">
+                <option value="">우선순위 일괄…</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+              <select id="tcBulkAreaTag" class="form-input tc-bulk-select" title="선택한 케이스에 영역 태그를 일괄 적용(기존 태그에 추가)">
+                <option value="">영역 태그 일괄…</option>
+              </select>
+              <input type="text" id="tcBulkVersion" class="form-input tc-bulk-version" maxlength="50" placeholder="버전 라벨 일괄 입력">
+              <button type="button" class="btn btn-sm" id="tcBulkVersionBtn">버전 적용</button>
+            </div>
             <button type="button" class="btn btn-sm btn-danger" id="tcBulkDeleteBtn">🗑 선택 삭제</button>
             <button type="button" class="btn btn-sm" id="tcBulkClearBtn">선택 해제</button>
           </div>
@@ -623,7 +644,10 @@
       <div id="planEditorEmpty" class="plan-empty">플랜을 선택하거나 새로 만드세요.</div>
       <form id="planForm" class="plan-form" hidden>
         <input id="planId" type="hidden">
-        <div class="plan-editor-title" id="planFormTitle">새 테스트 플랜</div>
+        <div class="plan-editor-header">
+          <div class="plan-editor-title" id="planFormTitle">새 테스트 플랜</div>
+          <button type="button" class="btn btn-sm" id="duplicatePlanButton" hidden>⧉ 복제</button>
+        </div>
 
         <div class="plan-section">
           <div class="plan-section-title">기본 정보</div>
@@ -784,8 +808,8 @@
             <button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>
             <button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>
             <button type="button" class="btn btn-sm suite-run-btn retest" data-s="RETEST">재테스트</button>
+            <button type="button" class="btn btn-sm suite-run-btn nt" data-s="NOT_IMPLEMENTED">미구현</button>
             <button type="button" class="btn btn-sm" data-s="UNTESTED">미실행</button>
-            <button type="button" class="btn btn-sm" id="runBulkClear">선택 해제</button>
           </div>
         </div>
         <div id="runDetailItems" class="run-detail-items"></div>

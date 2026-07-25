@@ -241,6 +241,7 @@ public class ExcelExportService {
         long failed = countStatus(items, "FAILED");
         long blocked = countStatus(items, "BLOCKED");
         long retest = countStatus(items, "RETEST");
+        long notImplemented = countStatus(items, "NOT_IMPLEMENTED");
         long untested = countStatus(items, "UNTESTED");
         long executed = total - untested;
         int progressPct = total == 0 ? 0 : Math.round((executed * 100f) / total);
@@ -266,6 +267,7 @@ public class ExcelExportService {
             meta.add(new String[]{"실패", str(failed)});
             meta.add(new String[]{"차단", str(blocked)});
             meta.add(new String[]{"재테스트", str(retest)});
+            meta.add(new String[]{"미구현", str(notImplemented)});
             meta.add(new String[]{"미실행", str(untested)});
             meta.add(new String[]{"진행률", progressPct + "%"});
             meta.add(new String[]{"통과율", passRate + "%"});

@@ -25,9 +25,19 @@ public record DashboardStatsResponse(
         // 결함 히트맵 데이터 (#13) — 영역태그별 결함(실패) 빈도
         List<HeatmapEntry> defectHeatmap,
 
+        // 잔존 이슈 = 미해결 결함(OPEN·IN_PROGRESS) 목록
+        List<OpenDefectEntry> openDefects,
+
         // 최근 감사 로그 (#13)
         List<AuditLogEntry> recentAuditLogs
 ) {
+    public record OpenDefectEntry(
+            Long id,
+            String title,
+            String severity,
+            String status
+    ) {}
+
     public record ExecutionSummary(
             Long id,
             String name,
@@ -40,9 +50,11 @@ public record DashboardStatsResponse(
             String createdAt
     ) {}
 
+    // 결함 히트맵 한 행 — 영역태그별로 심각도(CRITICAL/MAJOR/MINOR/TRIVIAL)마다 서로 다른 결함 수.
     public record HeatmapEntry(
             String areaTag,
-            long count
+            Map<String, Long> bySeverity,
+            long total
     ) {}
 
     public record AuditLogEntry(

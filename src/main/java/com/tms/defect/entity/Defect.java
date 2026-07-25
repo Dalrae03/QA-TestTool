@@ -43,6 +43,9 @@ public class Defect {
     @Column(length = 50)
     private String jiraKey;
 
+    @Column(name = "project_id")
+    private Long projectId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -71,6 +74,9 @@ public class Defect {
 
     public void linkJira(String jiraKey) { this.jiraKey = jiraKey; }
     public void updateStatus(DefectStatus status) { this.status = status; }
+
+    public Long getProjectId() { return projectId; }
+    public void setProjectId(Long projectId) { this.projectId = projectId; }
 
     public Long getId() { return id; }
     public String getTitle() { return title; }

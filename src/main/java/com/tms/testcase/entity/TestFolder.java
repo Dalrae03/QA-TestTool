@@ -29,6 +29,10 @@ public class TestFolder {
     @Column(nullable = false, length = 200)
     private String name;
 
+    // TC 표시 ID 접두사(예: LOGIN, PAY). 비어 있으면 상위 폴더에서 상속한다(effectiveCode 참고).
+    @Column(length = 20)
+    private String code;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private TestFolder parent;
@@ -65,14 +69,31 @@ public class TestFolder {
         this.name = name;
     }
 
+    public void changeCode(String code) {
+        this.code = code;
+    }
+
     public void move(TestFolder newParent) {
         this.parent = newParent;
+    }
+
+    /** 자신의 코드가 없으면 상위 폴더로 거슬러 올라가 상속받은 접두사를 반환한다. 어디에도 없으면 null. */
+    public String effectiveCode() {
+        TestFolder cur = this;
+        while (cur != null) {
+            if (cur.code != null && !cur.code.isBlank()) {
+                return cur.code;
+            }
+            cur = cur.parent;
+        }
+        return null;
     }
 
     public Long getProjectId() { return projectId; }
     public void setProjectId(Long projectId) { this.projectId = projectId; }
     public Long getId() { return id; }
     public String getName() { return name; }
+    public String getCode() { return code; }
     public TestFolder getParent() { return parent; }
     public List<TestFolder> getChildren() { return children; }
     public LocalDateTime getCreatedAt() { return createdAt; }

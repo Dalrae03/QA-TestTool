@@ -60,10 +60,13 @@ class DashboardHeatmapIntegrationTest {
         mockMvc.perform(get("/api/dashboard/stats").param("projectId", projectId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.defectHeatmap", org.hamcrest.Matchers.hasSize(2)))
-                .andExpect(jsonPath("$.defectHeatmap[0].areaTag").value("로그인"))   // count 내림차순
-                .andExpect(jsonPath("$.defectHeatmap[0].count").value(2))
+                .andExpect(jsonPath("$.defectHeatmap[0].areaTag").value("로그인"))   // total 내림차순
+                .andExpect(jsonPath("$.defectHeatmap[0].total").value(2))
+                .andExpect(jsonPath("$.defectHeatmap[0].bySeverity.MAJOR").value(1)) // d1
+                .andExpect(jsonPath("$.defectHeatmap[0].bySeverity.MINOR").value(1)) // d2
                 .andExpect(jsonPath("$.defectHeatmap[1].areaTag").value("결제"))
-                .andExpect(jsonPath("$.defectHeatmap[1].count").value(1));
+                .andExpect(jsonPath("$.defectHeatmap[1].total").value(1))
+                .andExpect(jsonPath("$.defectHeatmap[1].bySeverity.MAJOR").value(1));
     }
 
     @Test

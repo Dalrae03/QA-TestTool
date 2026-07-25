@@ -1,19 +1,1177 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TMS Web</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; color: #1f2937; }
-    h1 { font-size: 20px; }
-    .status { padding: 10px 12px; border-radius: 8px; margin: 8px 0; background: #f3f4f6; font-size: 14px; }
-    .status.ok { background: #ecfdf5; color: #047857; }
-    .status.err { background: #fef2f2; color: #b91c1c; }
-  </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1440">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co ws://localhost:* http://localhost:* http://127.0.0.1:*">
+  <title>QA TestTool</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module" src="/src/main.js"></script>
+<div class="app-layout">
+
+<!-- ══ 왼쪽 nav-sidebar ══ -->
+<nav class="nav-sidebar" id="navSidebar">
+  <div class="nav-brand" id="navBrand" onclick="toggleSidebar()" title="사이드바 열기/닫기">
+    <div class="nav-brand-icon">Q</div>
+    <span class="nav-brand-name">QA Console</span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab" id="navDash" onclick="switchView('dashboard')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span class="nav-label">대시보드</span>
+    </button>
+    <button class="nav-tab active" id="navTC" onclick="switchView('testcases')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      <span class="nav-label">테스트 케이스</span>
+    </button>
+    <button class="nav-tab" id="navPlans" onclick="switchView('plans')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
+      <span class="nav-label">테스트 플랜</span>
+    </button>
+    <button class="nav-tab" id="navRuns" onclick="switchView('runs')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span class="nav-label">테스트런</span>
+    </button>
+    <button class="nav-tab" id="navSet" onclick="switchView('settings')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
+      <span class="nav-label">연결 설정</span>
+    </button>
+  </div>
+  <div class="nav-footer">
+    <span class="meta-pill" id="platform-pill">platform</span>
+    <span class="meta-pill" id="version-pill">version</span>
+  </div>
+</nav>
+
+<main class="app-main">
+
+<!-- ══ 프로젝트 선택 바 (#14) ══ -->
+<div class="project-bar" id="projectBar">
+  <span class="project-bar-label">프로젝트</span>
+  <select id="projectSelect" class="project-select" onchange="onProjectChange()">
+    <option value="">프로젝트 없음</option>
+  </select>
+  <button class="btn btn-sm" onclick="showCreateProjectModal()" title="새 프로젝트 생성">＋</button>
+</div>
+
+<!-- ══ 1. 대시보드 ══ -->
+<div class="app-view" id="view-dashboard">
+  <div class="view-hd">
+    <div class="view-eyebrow">Overview</div>
+    <div class="view-h2">대시보드</div>
+    <p class="view-sub">전체 테스트케이스 현황을 한눈에 확인합니다.</p>
+  </div>
+  <div class="dash-body">
+    <!-- 프로젝트 목록 카드 -->
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="detail-card-ttl" style="margin-bottom:0">프로젝트</div>
+        <button class="btn btn-sm" onclick="showCreateProjectModal()">＋ 새 프로젝트</button>
+      </div>
+      <div id="dashProjectGrid" class="dash-project-grid">
+        <span style="font-size:12px;color:var(--text-muted)">불러오는 중...</span>
+      </div>
+    </div>
+    <div class="dash-grid">
+      <div class="stat-card"><div style="font-size:18px">📋</div><div class="stat-val" id="dashStatTotal">0</div><div class="stat-lbl">전체 테스트케이스</div></div>
+      <div class="stat-card"><div style="font-size:18px">✅</div><div class="stat-val" id="dashStatReady" style="color:var(--c-ready)">0</div><div class="stat-lbl">준비됨</div></div>
+      <div class="stat-card"><div style="font-size:18px">⚠️</div><div class="stat-val" id="dashStatIssues" style="color:var(--c-review)">0</div><div class="stat-lbl">잔존 이슈</div></div>
+      <div class="stat-card"><div style="font-size:18px">🏁</div><div class="stat-val" id="dashStatCompleted" style="color:var(--c-done)">0</div><div class="stat-lbl">완료</div></div>
+    </div>
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="detail-card-ttl" style="margin-bottom:0">테스트런 현황</div>
+        <span class="badge b-tag" style="cursor:pointer" onclick="switchView('runs')">테스트런 보기 →</span>
+      </div>
+      <div id="dashRunEmpty" style="font-size:12px;color:var(--text-muted)">아직 생성된 테스트런이 없습니다.</div>
+      <div id="dashRunBody" hidden>
+        <div class="dash-run-stats">
+          <div><div class="dash-run-num" id="dashRunTotal">0</div><div class="dash-run-lbl">전체 런</div></div>
+          <div><div class="dash-run-num" id="dashRunActive" style="color:var(--c-ready)">0</div><div class="dash-run-lbl">진행 중</div></div>
+          <div><div class="dash-run-num" id="dashRunDone" style="color:var(--c-done)">0</div><div class="dash-run-lbl">완료</div></div>
+          <div><div class="dash-run-num" id="dashRunPass" style="color:var(--c-pass)">0%</div><div class="dash-run-lbl">통과율</div></div>
+        </div>
+        <div class="suite-run-bar" id="dashRunBar" style="margin-top:14px"></div>
+        <div class="suite-run-stats" id="dashRunChips"></div>
+        <div class="dash-runlist-ttl">테스트런별 상황</div>
+        <div class="dash-runlist" id="dashRunList"></div>
+      </div>
+    </div>
+    <div class="dash-row2">
+      <div class="detail-card">
+        <div class="detail-card-ttl">우선순위 분포</div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-hi)">높음</span><div class="pbar-track"><div class="pbar-fill" id="dashPriHigh" style="width:0%;background:var(--c-hi)"></div></div><span class="pbar-cnt" id="dashPriHighCnt">0</span></div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-mid)">중간</span><div class="pbar-track"><div class="pbar-fill" id="dashPriMid" style="width:0%;background:var(--c-mid)"></div></div><span class="pbar-cnt" id="dashPriMidCnt">0</span></div>
+        <div class="pbar-row"><span class="pbar-lbl" style="color:var(--c-lo)">낮음</span><div class="pbar-track"><div class="pbar-fill" id="dashPriLo" style="width:0%;background:var(--c-lo)"></div></div><span class="pbar-cnt" id="dashPriLoCnt">0</span></div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-card-ttl">영역 태그 분포</div>
+        <div class="tag-chip-list" id="dashTagChips"><span style="font-size:12px;color:var(--text-muted)">데이터 없음</span></div>
+      </div>
+    </div>
+    <!-- 잔존 이슈 현황판 -->
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="detail-card-ttl" style="margin-bottom:0">잔존 이슈 현황판</div>
+        <span class="badge b-review" id="dashIssueCount">0건</span>
+      </div>
+      <div id="dashIssueList">
+        <p style="font-size:12px;color:var(--text-muted)">미해결 결함이 없습니다.</p>
+      </div>
+    </div>
+    <!-- 결함 히트맵 (#13) -->
+    <div class="detail-card">
+      <div class="detail-card-ttl">결함 히트맵 (영역 × 심각도)</div>
+      <div id="dashHeatmap" class="heatmap-grid">
+        <span style="font-size:12px;color:var(--text-muted)">데이터 없음</span>
+      </div>
+    </div>
+    <!-- 최근 감사 로그 (#13) -->
+    <div class="detail-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="detail-card-ttl" style="margin-bottom:0">최근 활동 로그</div>
+        <span class="badge b-tag" style="cursor:pointer" onclick="refreshDashboardAuditLogs()">새로고침</span>
+      </div>
+      <div id="dashAuditList" class="dash-audit-list">
+        <p style="font-size:12px;color:var(--text-muted)">로그 없음</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 2. 테스트케이스 뷰 ══ -->
+<div class="app-view active" id="view-testcases">
+  <div class="tc-workspace">
+
+    <!-- 왼쪽: 검색 + 폴더 트리 -->
+    <div class="tc-sidebar" id="tcSidebar">
+      <!-- 사이드바 검색 -->
+      <div class="tc-sidebar-top">
+        <div class="search-box" style="margin-bottom:0">
+          <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input id="folderSearchInput" type="search" placeholder="폴더 검색…" autocomplete="off">
+        </div>
+      </div>
+      <!-- 폴더 추가 -->
+      <div class="folder-add-wrap">
+        <button id="folderAddBtn" class="folder-add-btn">＋ 폴더 추가</button>
+      </div>
+      <!-- 폴더 트리 (UI 전용) -->
+      <div class="folder-tree" id="folderTree">
+        <div class="folder-node-wrap" data-id="all" data-depth="0">
+          <div class="drop-line" id="dl-top-all"></div>
+          <div class="folder-node" data-id="all" draggable="true"
+            onclick="selFolder(this,'전체')"
+            ondragstart="onDragStart(event,'all')" ondragover="onDragOver(event,'all')"
+            ondragleave="onDragLeave(event,'all')" ondrop="onDrop(event,'all')">
+            <span class="drag-handle">⋮⋮</span>
+            <span class="folder-caret-placeholder"></span>
+            <span style="font-size:14px">📂</span><span class="folder-label">전체</span>
+            <span class="folder-cnt" id="folderCntAll">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 리사이즈 핸들 -->
+    <div class="sidebar-resize-handle" id="sidebarResizeHandle"></div>
+
+    <!-- 오른쪽: 메인 -->
+    <div class="tc-main">
+
+      <!-- 항상 표시되는 상단 바 -->
+      <div class="tc-main-top">
+        <div class="tc-main-search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input placeholder="테스트 케이스 검색..." id="filterKeyword">
+        </div>
+        <span id="mainSearchCount" style="font-size:11px;font-weight:600;color:var(--text-muted);background:var(--bg-app);border:1px solid var(--border);border-radius:var(--r-md);padding:4px 9px;white-space:nowrap;flex-shrink:0">0개</span>
+        <!-- 정렬 드롭다운 (UI 전용) -->
+        <div class="sort-wrap">
+          <button class="sort-btn" onclick="toggleSortMenu(event)" title="정렬 기준">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="sort-menu" id="sortMenu">
+            <div class="sort-item active" onclick="setSort(this,'id_asc','ID 순')">ID 순</div>
+            <div class="sort-item" onclick="setSort(this,'updated_desc','최신 수정순')">최신 수정순</div>
+            <div class="sort-item" onclick="setSort(this,'title_asc','제목 A→Z')">제목 A→Z</div>
+            <div class="sort-item" onclick="setSort(this,'priority_desc','우선순위 HIGH→LOW')">우선순위 HIGH→LOW</div>
+            <div class="sort-item" onclick="setSort(this,'status_asc','상태 순')">상태 순</div>
+          </div>
+        </div>
+        <button class="btn btn-sm" id="filterToggleBtn" onclick="toggleFilterBar()">검색 필터</button>
+        <button class="btn btn-sm" id="refreshButton" title="새로고침">🔄</button>
+        <button class="btn btn-sm" id="excelImportButton" onclick="openExcelImportModal()" title="엑셀로 테스트케이스 가져오기">📥 Excel</button>
+        <button class="btn btn-sm" id="excelExportButton" onclick="openExportModal()" title="엑셀로 내보내기">📤 내보내기</button>
+        <button class="btn btn-sm btn-pri" id="newButton">＋ 새 케이스</button>
+      </div>
+
+      <!-- 검색 필터 패널 (토글) -->
+      <div class="tc-filter-bar" id="tcFilterBar">
+        <div class="tc-filter-row">
+          <span class="tc-filter-section-lbl">STATUS</span>
+          <div class="filter-pills" id="statusFilterPills" style="margin-bottom:0">
+            <button class="filter-pill active" data-value="">ALL</button>
+            <button class="filter-pill" data-value="DRAFT">DRAFT</button>
+            <button class="filter-pill" data-value="REVIEW_NEEDED">REVIEW</button>
+            <button class="filter-pill" data-value="READY">READY</button>
+            <button class="filter-pill" data-value="COMPLETED">COMPLETED</button>
+          </div>
+        </div>
+        <div class="tc-filter-row">
+          <span class="tc-filter-section-lbl">OS 환경</span>
+          <div class="filter-pills" id="osFilterPills" style="margin-bottom:0">
+            <button class="filter-pill active" data-value="">ALL</button>
+            <button class="filter-pill" data-value="MAC">Mac</button>
+            <button class="filter-pill" data-value="WINDOWS">Win</button>
+            <button class="filter-pill" data-value="LINUX">Linux</button>
+            <button class="filter-pill" data-value="IOS">iOS</button>
+            <button class="filter-pill" data-value="ANDROID">Android</button>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <select id="filterType" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">타입 전체</option>
+              <option value="FUNCTIONAL">FUNCTIONAL</option>
+              <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
+            </select>
+            <select id="filterAreaTag" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">태그 전체</option>
+            </select>
+            <select id="filterVersion" class="form-input" style="padding:4px 8px;font-size:11px;min-width:80px">
+              <option value="">버전 전체</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 탭 바 -->
+      <div class="tc-content">
+        <div class="tc-tab-bar">
+          <button class="tc-tab on" id="tctab-list" onclick="switchTcTab('list')">목록</button>
+          <button class="tc-tab" id="tctab-detail" onclick="switchTcTab('detail')">상세 보기</button>
+          <button class="tc-tab" id="tctab-runs" onclick="switchTcTab('runs')">실행 기록</button>
+          <span class="tc-tab-spacer"></span>
+          <span class="tc-breadcrumb" id="tcBreadcrumb">전체</span>
+        </div>
+
+        <!-- ① 목록 패널 -->
+        <div class="tc-panel show" id="tcp-list">
+          <!-- 일괄 처리 바 (케이스 선택 시 표시) -->
+          <div id="tcBulkBar" class="tc-bulk-bar" hidden>
+            <span id="tcBulkCount" class="tc-bulk-count">0개 선택됨</span>
+            <span class="tc-bulk-hint" style="font-size:11px;color:var(--text-muted)">선택한 항목을 드래그하면 한꺼번에 폴더로 이동합니다</span>
+            <div class="tc-bulk-edit">
+              <select id="tcBulkStatus" class="form-input tc-bulk-select" title="선택한 케이스의 상태를 일괄 변경">
+                <option value="">상태 일괄…</option>
+                <option value="DRAFT">DRAFT</option>
+                <option value="REVIEW_NEEDED">REVIEW</option>
+                <option value="READY">READY</option>
+                <option value="COMPLETED">DONE</option>
+              </select>
+              <select id="tcBulkPriority" class="form-input tc-bulk-select" title="선택한 케이스의 우선순위를 일괄 변경">
+                <option value="">우선순위 일괄…</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+              <select id="tcBulkAreaTag" class="form-input tc-bulk-select" title="선택한 케이스에 영역 태그를 일괄 적용(기존 태그에 추가)">
+                <option value="">영역 태그 일괄…</option>
+              </select>
+              <input type="text" id="tcBulkVersion" class="form-input tc-bulk-version" maxlength="50" placeholder="버전 라벨 일괄 입력">
+              <button type="button" class="btn btn-sm" id="tcBulkVersionBtn">버전 적용</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" id="tcBulkDeleteBtn">🗑 선택 삭제</button>
+            <button type="button" class="btn btn-sm" id="tcBulkClearBtn">선택 해제</button>
+          </div>
+          <div class="tc-list-scroll">
+            <div id="listState" class="list-state-msg" style="display:none"></div>
+            <table class="ctbl">
+              <colgroup><col style="width:34px"><col style="width:68px"><col><col style="width:90px"><col style="width:72px"><col style="width:72px"><col style="width:150px"><col style="width:90px"><col style="width:80px"><col style="width:90px"></colgroup>
+              <thead>
+                <tr><th><input type="checkbox" id="tcSelectAll" title="현재 목록 전체 선택"></th><th>ID</th><th>제목</th><th>상태</th><th>우선순위</th><th>유형</th><th>환경</th><th>영역 태그</th><th>버전</th><th>수정일</th></tr>
+              </thead>
+              <tbody id="testCaseList"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ② 상세 보기 / 에디터 패널 -->
+        <div class="tc-panel" id="tcp-detail">
+
+          <!-- 에디터가 없을 때 빈 상태 -->
+          <div id="detailEmpty" class="empty-state">
+            <div class="empty-icon">📝</div>
+            <strong style="font-size:13px;color:var(--text-primary)">케이스를 선택하거나 새로 만드세요</strong>
+            <p>목록에서 테스트케이스를 클릭하거나<br>상단의 ＋ 새 케이스 버튼을 눌러주세요.</p>
+          </div>
+
+          <!-- 에디터 (새 케이스 또는 케이스 선택 시 표시) -->
+          <div id="detailEditor" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+            <!-- 에디터 헤더 -->
+            <div class="dt-header" id="editorPanel" data-flow-stage="draft">
+              <div class="dt-id" id="dtCaseId">새 테스트케이스</div>
+              <div class="dt-title" id="editorTitle">테스트케이스 작성</div>
+              <div class="dt-pills" id="dtPills"></div>
+              <div class="dt-actions">
+                <button id="duplicateButton" class="btn btn-sm" disabled>복제</button>
+                <button id="deleteButton" class="btn btn-sm btn-danger" disabled>삭제</button>
+                <button id="resetButton" class="btn btn-sm">초기화</button>
+              </div>
+            </div>
+
+            <!-- 에디터 폼 바디 -->
+            <div class="dt-body">
+              <form id="testCaseForm">
+                <input id="testCaseId" type="hidden">
+
+                <div class="editor-row2" style="margin-bottom:14px">
+                  <label class="form-field">
+                    <span>Type <strong class="required-mark">*</strong></span>
+                    <select id="type" class="form-input" required>
+                      <option value="FUNCTIONAL">FUNCTIONAL</option>
+                      <option value="NON_FUNCTIONAL">NON_FUNCTIONAL</option>
+                    </select>
+                  </label>
+                  <label class="form-field">
+                    <span>Priority <strong class="required-mark">*</strong></span>
+                    <select id="priority" class="form-input" required>
+                      <option value="HIGH">HIGH</option>
+                      <option value="MEDIUM">MEDIUM</option>
+                      <option value="LOW">LOW</option>
+                    </select>
+                  </label>
+                </div>
+
+                <!-- 폴더 배정 -->
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">폴더</span>
+                  <select id="tcFolder" class="form-input">
+                    <option value="">미분류</option>
+                  </select>
+                </div>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">담당자</span>
+                  <select id="assignee" class="form-input">
+                    <option value="">담당자 없음</option>
+                  </select>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>버전 라벨</span>
+                  <input id="tcVersion" type="text" maxlength="50" placeholder="예: v1.0, release-2026.06" class="form-input">
+                </label>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">Status</span>
+                  <div class="status-selector" id="statusSelector">
+                    <button type="button" class="status-btn active" data-value="DRAFT"><span class="status-dot draft"></span>DRAFT</button>
+                    <button type="button" class="status-btn" data-value="REVIEW_NEEDED"><span class="status-dot review"></span>REVIEW</button>
+                    <button type="button" class="status-btn" data-value="READY"><span class="status-dot ready"></span>READY</button>
+                    <button type="button" class="status-btn" data-value="COMPLETED"><span class="status-dot completed"></span>DONE ✓</button>
+                  </div>
+                  <input type="hidden" id="tcStatus" value="DRAFT">
+                </div>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">영역 태그</span>
+                  <div class="tag-input-area">
+                    <div id="selectedTagChips" class="tag-chips"></div>
+                    <div class="tag-add-row">
+                      <select id="tagSelect" class="tag-select"><option value="">태그 선택…</option></select>
+                      <button type="button" id="addTagButton" class="btn btn-sm">추가</button>
+                      <span class="tag-divider">|</span>
+                      <input type="text" id="newTagInput" class="tag-new-input" placeholder="새 태그 이름">
+                      <button type="button" id="createTagButton" class="btn btn-sm">생성</button>
+                    </div>
+                  </div>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Title <strong class="required-mark">*</strong></span>
+                  <input id="title" type="text" maxlength="200" required placeholder="예: 로그인 성공 테스트" class="form-input">
+                </label>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Description <strong class="required-mark">*</strong></span>
+                  <textarea id="description" required placeholder="테스트 목적과 개요를 적습니다." class="form-input"></textarea>
+                </label>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Precondition <strong class="required-mark">*</strong></span>
+                  <textarea id="precondition" required placeholder="사전 조건을 적습니다." class="form-input"></textarea>
+                </label>
+
+                <div class="form-field" style="margin-bottom:14px">
+                  <span class="form-field-label">Steps <strong class="required-mark">*</strong></span>
+                  <div id="stepsBuilder" class="steps-builder">
+                    <div id="stepsList" class="steps-list"></div>
+                    <button id="addStepButton" type="button" class="btn btn-sm step-add-btn">＋ 단계 추가</button>
+                  </div>
+                </div>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>예상 결과</span>
+                  <textarea id="expectedResult" placeholder="테스트 수행 후 기대되는 결과를 적습니다." class="form-input"></textarea>
+                </label>
+
+                <label class="form-field" style="margin-bottom:14px">
+                  <span>Notes</span>
+                  <textarea id="notes" placeholder="추가 메모가 있으면 적습니다." class="form-input"></textarea>
+                </label>
+
+                <div class="form-field env-section" style="margin-bottom:14px">
+                  <span class="form-field-label">테스트 환경</span>
+                  <label class="form-field env-field configuration-select-field">
+                    <span>Configuration</span>
+                    <select id="testConfiguration" class="form-input">
+                      <option value="">직접 설정</option>
+                    </select>
+                  </label>
+                  <div class="env-row">
+                    <label class="form-field env-field">
+                      <span>OS</span>
+                      <select id="envOs" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="MAC">Mac</option>
+                        <option value="WINDOWS">Windows</option>
+                        <option value="LINUX">Linux</option>
+                        <option value="IOS">iOS</option>
+                        <option value="ANDROID">Android</option>
+                      </select>
+                    </label>
+                    <label class="form-field env-field">
+                      <span>브라우저</span>
+                      <select id="envBrowser" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="CHROME">Chrome</option>
+                        <option value="FIREFOX">Firefox</option>
+                        <option value="SAFARI">Safari</option>
+                        <option value="EDGE">Edge</option>
+                        <option value="SAMSUNG_INTERNET">Samsung Internet</option>
+                        <option value="NONE">없음 (앱/API)</option>
+                      </select>
+                    </label>
+                    <label class="form-field env-field">
+                      <span>디바이스</span>
+                      <select id="envDevice" class="form-input">
+                        <option value="">선택 안 함</option>
+                        <option value="DESKTOP">Desktop</option>
+                        <option value="MOBILE">Mobile</option>
+                        <option value="TABLET">Tablet</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="server-env-block">
+                    <label class="form-field env-field">
+                      <span>서버 환경</span>
+                      <select id="envServer" class="form-input">
+                        <option value="">선택 안 함</option>
+                      </select>
+                    </label>
+                    <div class="server-env-create">
+                      <input id="newServerEnvName" class="form-input" maxlength="100" placeholder="환경 이름">
+                      <select id="newServerEnvType" class="form-input">
+                        <option value="LOCAL">LOCAL</option>
+                        <option value="DEVELOPMENT">DEVELOPMENT</option>
+                        <option value="STAGING">STAGING</option>
+                        <option value="PRODUCTION">PRODUCTION</option>
+                      </select>
+                      <input id="newServerEnvUrl" type="url" class="form-input" maxlength="500" placeholder="https://staging.example.com">
+                      <button id="createServerEnvButton" type="button" class="btn btn-sm">＋ 서버 환경 등록</button>
+                    </div>
+                    <div class="server-env-manage">
+                      <button type="button" id="toggleServerEnvManageBtn" class="server-env-manage-toggle">⚙ 등록된 서버 환경 관리</button>
+                      <div id="serverEnvManageList" class="server-env-manage-list" style="display:none"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 결함 / Jira 섹션 -->
+                <div class="defect-section" id="defectSection" style="display:none">
+                  <div class="defect-section-hd">
+                    <span>🐛 연결된 결함</span>
+                    <div style="display:flex;gap:6px">
+                      <button type="button" id="addDefectBtn" class="btn btn-sm btn-pri" title="새 결함을 만들어 이 케이스에 연결">＋ 결함 추가</button>
+                      <button type="button" id="linkDefectBtn" class="btn btn-sm" title="기존 결함을 이 케이스에 연결">🔗 기존 결함 연결</button>
+                      <button type="button" id="jiraSyncAllBtn" class="btn btn-sm" title="jiraKey가 있는 모든 결함 동기화">⟳ 전체 Jira 동기화</button>
+                    </div>
+                  </div>
+
+                  <!-- 새 결함 생성 폼 -->
+                  <div id="defectCreateForm" class="defect-create-form" style="display:none">
+                    <input id="defectTitle" type="text" class="form-input" maxlength="200" placeholder="결함 제목 *">
+                    <textarea id="defectDescription" class="form-input" rows="2" placeholder="결함 설명"></textarea>
+                    <div class="defect-create-row">
+                      <select id="defectSeverity" class="form-input">
+                        <option value="CRITICAL">CRITICAL</option>
+                        <option value="MAJOR" selected>MAJOR</option>
+                        <option value="MINOR">MINOR</option>
+                        <option value="TRIVIAL">TRIVIAL</option>
+                      </select>
+                      <select id="defectStatus" class="form-input">
+                        <option value="OPEN" selected>OPEN</option>
+                        <option value="IN_PROGRESS">진행중</option>
+                        <option value="RESOLVED">해결됨</option>
+                        <option value="CLOSED">종료</option>
+                      </select>
+                      <input id="defectExternalUrl" type="url" class="form-input" maxlength="500" placeholder="외부 URL (선택)">
+                    </div>
+                    <div class="defect-create-actions">
+                      <button type="button" id="defectCreateCancelBtn" class="btn btn-sm">취소</button>
+                      <button type="button" id="defectCreateSaveBtn" class="btn btn-sm btn-pri">생성 후 연결</button>
+                    </div>
+                  </div>
+
+                  <!-- 기존 결함 연결 폼 -->
+                  <div id="defectLinkForm" class="defect-create-form" style="display:none">
+                    <div class="defect-create-row" style="grid-template-columns:1fr auto auto">
+                      <select id="defectLinkSelect" class="form-input"><option value="">결함을 선택하세요</option></select>
+                      <button type="button" id="defectLinkConfirmBtn" class="btn btn-sm btn-pri">연결</button>
+                      <button type="button" id="defectLinkCancelBtn" class="btn btn-sm">취소</button>
+                    </div>
+                  </div>
+
+                  <div id="defectList"></div>
+                  <p id="defectEmpty" style="font-size:12px;color:var(--text-muted);display:none">연결된 결함이 없습니다. ＋ 결함 추가로 새 결함을 등록하세요.</p>
+                </div>
+
+                <!-- 첨부파일 섹션 -->
+                <div class="attach-section" id="tcAttachSection" style="display:none">
+                  <div class="attach-section-hd">
+                    <span>📎 첨부파일</span>
+                    <button type="button" id="tcAttachUploadBtn" class="btn btn-sm">＋ 파일 업로드</button>
+                  </div>
+                  <div id="tcAttachList" class="attach-list"></div>
+                </div>
+
+                <!-- 버전 관리 섹션 -->
+                <div class="version-section" id="versionSection" style="display:none">
+                  <div class="version-section-hd">
+                    <span>버전 관리</span>
+                    <button type="button" id="versionRefreshBtn" class="btn btn-sm">새로고침</button>
+                  </div>
+                  <div id="versionList" class="version-list"></div>
+                </div>
+
+                <!-- 변경이력 / 감사로그 섹션 -->
+                <div class="audit-section" id="auditSection" style="display:none">
+                  <div class="audit-section-hd">
+                    <span>변경이력</span>
+                    <button type="button" id="auditRefreshBtn" class="btn btn-sm">새로고침</button>
+                  </div>
+                  <div id="auditList" class="audit-list"></div>
+                </div>
+
+                <div class="form-footer">
+                  <p id="formMode" style="font-size:12px;color:var(--text-muted)">새 테스트케이스를 저장할 준비가 됐습니다. <span style="color:var(--accent);font-weight:600;font-size:11px">* 표시는 필수 입력입니다.</span></p>
+                  <button type="submit" class="btn btn-pri">저장</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 실행 기록 패널 -->
+        <div class="tc-panel" id="tcp-runs">
+          <div class="runs-body">
+            <!-- 폴더 단위 실행 기록 개요 -->
+            <section id="folderRunsPanel" class="run-panel-inner" style="display:none">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <p style="font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:2px" id="folderRunsId"></p>
+                  <div style="font-size:13px;font-weight:600" id="folderRunsTitle"></div>
+                </div>
+              </div>
+              <div id="folderRunsState" class="state-banner" style="display:none"></div>
+              <div id="folderRunsBody"></div>
+            </section>
+            <section id="runPanel" class="run-panel-inner run-panel-disabled">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <p style="font-size:10px;color:var(--text-muted);font-family:monospace;margin-bottom:2px" id="runPanelCaseId"></p>
+                  <div style="font-size:13px;font-weight:600" id="runPanelCaseTitle">테스트케이스를 선택하세요</div>
+                </div>
+              </div>
+              <div id="runState" class="state-banner">저장된 테스트케이스를 선택하면 실행 이력을 볼 수 있습니다.</div>
+              <form id="testRunForm" hidden style="display:none!important">
+                <select id="runStatus"><option value="PASSED">PASSED</option></select>
+                <textarea id="actualResult"></textarea>
+                <textarea id="runNotes"></textarea>
+                <button id="saveRunButton" type="submit"></button>
+              </form>
+              <div class="run-stats run-stats-four" id="runStats" style="display:none">
+                <div class="rs"><div class="rs-n" id="rsPass" style="color:var(--c-pass)">0</div><div class="rs-l">통과</div></div>
+                <div class="rs"><div class="rs-n" id="rsFail" style="color:var(--c-hi)">0</div><div class="rs-l">실패</div></div>
+                <div class="rs"><div class="rs-n" id="rsBlock" style="color:var(--text-muted)">0</div><div class="rs-l">차단</div></div>
+                <div class="rs"><div class="rs-n" id="rsRetest" style="color:#b45309">0</div><div class="rs-l">재테스트</div></div>
+              </div>
+              <div class="run-history-note">
+                실행 결과는 더 이상 여기서 직접 기록하지 않습니다. <b>테스트런</b>에서 이 케이스를 실행하면 그 결과가 버전과 함께 아래 이력에 자동으로 쌓입니다.
+                <button type="button" class="btn btn-sm" onclick="switchView('runs')">테스트런으로 이동 →</button>
+              </div>
+              <ul id="testRunList" class="run-list"></ul>
+            </section>
+          </div>
+        </div>
+
+      </div><!-- /tc-content -->
+    </div><!-- /tc-main -->
+  </div><!-- /tc-workspace -->
+</div>
+
+<!-- ══ 3. 테스트 플랜 / 스위트 ══ -->
+<div class="app-view" id="view-plans">
+  <div class="view-hd plan-view-header">
+    <div>
+      <div class="view-eyebrow">Planning</div>
+      <div class="view-h2">테스트 플랜</div>
+      <p class="view-sub">테스트 범위를 계획하고 구성합니다.</p>
+    </div>
+    <button class="btn btn-sm btn-pri" id="newPlanButton">＋ 새 플랜</button>
+  </div>
+  <div class="plan-workspace plan-workspace-2col">
+    <section class="plan-column">
+      <div class="plan-column-title"><span>테스트 플랜</span><span id="planCount" class="badge b-tag">0</span></div>
+      <div id="planList" class="plan-list"></div>
+    </section>
+
+    <section class="plan-editor-column">
+      <div id="planEditorEmpty" class="plan-empty">플랜을 선택하거나 새로 만드세요.</div>
+      <form id="planForm" class="plan-form" hidden>
+        <input id="planId" type="hidden">
+        <div class="plan-editor-header">
+          <div class="plan-editor-title" id="planFormTitle">새 테스트 플랜</div>
+          <button type="button" class="btn btn-sm" id="duplicatePlanButton" hidden>⧉ 복제</button>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">기본 정보</div>
+          <label class="form-field"><span>플랜 이름 *</span><input id="planName" class="form-input" maxlength="200" required></label>
+          <div class="editor-row2">
+            <label class="form-field"><span>상태 *</span><select id="planStatus" class="form-input">
+              <option value="DRAFT">작성중</option>
+              <option value="IN_REVIEW">검토중</option>
+              <option value="APPROVED">승인완료</option>
+              <option value="IN_PROGRESS">테스트 진행중</option>
+              <option value="COMPLETED">완료</option>
+              <option value="ON_HOLD">보류</option>
+              <option value="CANCELLED">취소</option>
+            </select></label>
+            <label class="form-field"><span>담당자</span><input id="planAssignee" class="form-input" maxlength="100" placeholder="담당자 이름"></label>
+          </div>
+          <div class="editor-row2">
+            <label class="form-field"><span>대상 시스템</span><input id="planTargetSystem" class="form-input" maxlength="200" placeholder="예) 웹, iOS 앱"></label>
+            <label class="form-field"><span>대상 버전 또는 릴리즈</span><input id="planTargetVersion" class="form-input" maxlength="200" placeholder="예) v1.2.0"></label>
+          </div>
+          <div class="editor-row2">
+            <label class="form-field"><span>테스트 기간 - 시작일</span><input id="planStartDate" type="date" class="form-input"></label>
+            <label class="form-field"><span>테스트 기간 - 종료일</span><input id="planEndDate" type="date" class="form-input"></label>
+          </div>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">프로젝트 개요</div>
+          <label class="form-field"><span>테스트 목표</span><textarea id="planTestGoal" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>테스트 대상</span><textarea id="planTestTarget" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 범위</div>
+          <div class="form-field">
+            <span>핵심 테스트 대상</span>
+            <div class="plan-tc-summary">
+              <span id="planCoreCaseSummary">선택된 테스트케이스 없음</span>
+              <button type="button" class="btn btn-sm" onclick="openPlanTcPickerModal()">테스트케이스 선택</button>
+            </div>
+          </div>
+          <label class="form-field"><span>영향 범위 (포함 테스트 대상)</span><textarea id="planImpactScope" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>공통 검증 범위</span><textarea id="planCommonScope" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 우선순위 및 리스크</div>
+          <div class="form-field">
+            <span>우선순위별 테스트 대상</span>
+            <div id="planPriorityTargets"></div>
+          </div>
+          <div class="form-field">
+            <span>리스크 분석 및 대응</span>
+            <label class="form-field"><span>주요 리스크</span><textarea id="planRiskMain" class="form-input" rows="2"></textarea></label>
+            <label class="form-field"><span>대응 방향</span><textarea id="planRiskResponse" class="form-input" rows="2"></textarea></label>
+          </div>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 전략</div>
+          <label class="form-field"><span>테스트 접근 방식</span><textarea id="planTestApproach" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>테스트 관점</span><textarea id="planTestPerspective" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">진입 조건, 종료 기준</div>
+          <label class="form-field"><span>진입 조건</span><textarea id="planEntryCriteria" class="form-input" rows="2"></textarea></label>
+          <label class="form-field"><span>종료 기준</span><textarea id="planExitCriteria" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 환경</div>
+          <label class="form-field"><span>서버환경</span><textarea id="planServerEnvironment" class="form-input" rows="2"></textarea></label>
+          <div class="form-field">
+            <span>테스트 디바이스</span>
+            <div id="planDeviceMatrix"></div>
+          </div>
+          <label class="form-field"><span>테스트 데이터</span><textarea id="planTestData" class="form-input" rows="2"></textarea></label>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">테스트 일정 및 절차</div>
+          <div id="planSchedule"></div>
+        </div>
+
+        <div class="plan-section">
+          <div class="plan-section-title">산출물</div>
+          <textarea id="planDeliverables" class="form-input" rows="2"></textarea>
+        </div>
+
+        <div class="plan-form-actions"><button type="button" class="btn btn-sm btn-danger" id="deletePlanButton">삭제</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
+      </form>
+
+      <!-- suite 관련 DOM은 JS 호환성을 위해 숨김 상태로 유지 -->
+      <form id="suiteForm" class="plan-form" hidden style="display:none!important"><input id="suiteId" type="hidden"><input id="suiteName" type="hidden"><textarea id="suiteDescription" style="display:none"></textarea><div id="suiteCasePicker" style="display:none"></div><button id="deleteSuiteButton" style="display:none"></button><button id="suiteRunFromEditButton" style="display:none"></button></form>
+      <div id="suiteRunPanel" hidden style="display:none!important"><div id="suiteRunTitle" style="display:none"></div><button id="suiteEditButton" style="display:none"></button><div id="suiteRunBar" style="display:none"></div><div id="suiteRunStats" style="display:none"></div><div id="suiteRunCases" style="display:none"></div></div>
+    </section>
+  </div>
+</div>
+
+<!-- ══ 4. 테스트런 (실행 사이클) ══ -->
+<div class="app-view" id="view-runs">
+  <div class="view-hd plan-view-header">
+    <div>
+      <div class="view-eyebrow">Execution</div>
+      <div class="view-h2">테스트런</div>
+      <p class="view-sub">스위트를 선택해 실행 사이클을 만들고 결과를 기록합니다.</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm" id="manageSuitesButton">📋 스위트 관리</button>
+      <button class="btn btn-sm btn-pri" id="newRunButton">＋ 새 테스트런</button>
+    </div>
+  </div>
+  <div class="run-workspace">
+    <section class="run-list-column" id="runListColumn">
+      <div class="plan-column-title"><span>테스트런</span><span id="runCount" class="badge b-tag">0</span></div>
+      <div class="run-filter-bar">
+        <label class="run-filter-label" for="runAssigneeFilter">담당자</label>
+        <select id="runAssigneeFilter" class="form-input run-filter-select">
+          <option value="">전체</option>
+        </select>
+      </div>
+      <div id="runEmpty" class="plan-empty">아직 테스트런이 없습니다. ‘새 테스트런’으로 시작하세요.</div>
+      <div id="runList" class="run-cycle-list"></div>
+    </section>
+    <div class="sidebar-resize-handle" id="runListResizeHandle"></div>
+    <section class="run-detail-column">
+      <div id="runDetailEmpty" class="plan-empty">테스트런을 선택하거나 새로 만드세요.</div>
+      <div id="runDetail" class="run-detail" hidden>
+        <div class="run-detail-head">
+          <div>
+            <div class="plan-editor-title" id="runDetailName">테스트런</div>
+            <div class="run-detail-meta" id="runDetailMeta"></div>
+          </div>
+          <div class="run-detail-actions">
+            <span id="runAssigneeBadgeWrap"></span>
+            <span id="runPlanBadgeWrap"></span>
+            <span id="runEnvBadgeWrap"></span>
+            <span class="badge" id="runDetailStatus"></span>
+            <button type="button" class="btn btn-sm" id="runStatsButton" aria-pressed="false">📈 진척도·통계</button>
+            <button type="button" class="btn btn-sm" id="runCompleteButton">완료 처리</button>
+            <button type="button" class="btn btn-sm" id="runReportButton">📊 엑셀 리포트</button>
+            <button type="button" class="btn btn-sm" id="runAddSuiteButton">＋ 스위트 추가</button>
+            <button type="button" class="btn btn-sm" id="runCloneButton">복제</button>
+            <button type="button" class="btn btn-sm btn-danger" id="runDeleteButton">삭제</button>
+          </div>
+        </div>
+        <!-- 플랜 요약 (#10) -->
+        <div id="runPlanSummary" class="run-plan-summary" hidden></div>
+        <div id="runDetailReport" class="run-report" hidden></div>
+        <!-- 결과 일괄 처리 바 — 항목을 선택하면 나타난다 -->
+        <div id="runBulkBar" class="run-bulk-bar" hidden>
+          <label class="run-bulk-selectall"><input type="checkbox" id="runBulkSelectAll"> 전체 선택</label>
+          <span id="runBulkCount" class="run-bulk-count">0개 선택</span>
+          <input class="form-input run-bulk-note" id="runBulkNote" placeholder="비고 (선택, 모든 선택 항목에 적용)">
+          <div class="run-bulk-actions">
+            <button type="button" class="btn btn-sm suite-run-btn pass" data-s="PASSED">통과</button>
+            <button type="button" class="btn btn-sm suite-run-btn fail" data-s="FAILED">실패</button>
+            <button type="button" class="btn btn-sm suite-run-btn block" data-s="BLOCKED">차단</button>
+            <button type="button" class="btn btn-sm suite-run-btn retest" data-s="RETEST">재테스트</button>
+            <button type="button" class="btn btn-sm suite-run-btn nt" data-s="NOT_IMPLEMENTED">미구현</button>
+            <button type="button" class="btn btn-sm" data-s="UNTESTED">미실행</button>
+          </div>
+        </div>
+        <div id="runDetailItems" class="run-detail-items"></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- 새 테스트런 모달 -->
+<div id="newRunModal" class="modal-overlay" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="newRunModalTitle" style="width:560px;max-height:85vh;overflow-y:auto">
+    <div class="modal-head"><div class="modal-title" id="newRunModalTitle">새 테스트런</div><button type="button" class="modal-close" id="newRunCloseButton" aria-label="닫기">×</button></div>
+    <label class="form-field"><span>테스트 플랜 (선택)</span><select id="runPlanSelect" class="form-input"><option value="">-- 플랜 없이 생성 --</option></select></label>
+    <div class="run-source-toggle">
+      <button type="button" class="run-source-tab active" id="runSourceTabSuite" data-mode="suite">스위트에서 만들기</button>
+      <button type="button" class="run-source-tab" id="runSourceTabCases" data-mode="cases">테스트케이스 직접 선택</button>
+    </div>
+    <div class="form-field" id="runSuiteField">
+      <span>스위트 * (여러 개 선택 가능 — 선택한 스위트의 테스트케이스는 병합되어 테스트런 1개로 생성됩니다)</span>
+      <div id="runSuiteCheckList" class="tc-picker-tree" style="max-height:220px"></div>
+    </div>
+    <div class="form-field" id="runCasesField" hidden>
+      <span>테스트케이스 선택</span>
+      <div class="tc-picker-filter">
+        <input id="runTcPickerSearch" class="form-input" placeholder="🔍 제목 검색..." oninput="filterRunTcPicker()">
+        <select id="runTcPickerPriority" class="form-input" onchange="filterRunTcPicker()"><option value="">우선순위 전체</option><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select>
+        <select id="runTcPickerStatus" class="form-input" onchange="filterRunTcPicker()"><option value="">상태 전체</option><option value="DRAFT">Draft</option><option value="READY">Ready</option><option value="COMPLETED">Completed</option></select>
+      </div>
+      <div id="runTcPickerTree" class="tc-picker-tree"></div>
+      <div id="runTcPickerSelected" class="tc-picker-selected-bar">선택된 TC: <strong id="runTcPickerCount">0</strong>건</div>
+    </div>
+    <label class="form-field"><span>실행환경 (선택)</span><select id="runEnvSelect" class="form-input"><option value="">-- 환경 없음 --</option></select></label>
+    <label class="form-field"><span>런 이름</span><input id="runNameInput" class="form-input" maxlength="200" placeholder="비우면 자동으로 생성"></label>
+    <label class="form-field"><span>버전 (선택)</span><input id="runVersionInput" class="form-input" maxlength="50" placeholder="예: 2.21"></label>
+    <label class="form-field"><span>담당자</span><select id="runAssigneeInput" class="form-input"><option value="">담당자 없음</option></select></label>
+    <div class="plan-form-actions">
+      <button type="button" class="btn btn-sm" id="newRunCancelButton">취소</button>
+      <button type="button" class="btn btn-sm btn-pri" id="newRunCreateButton">생성</button>
+    </div>
+  </div>
+</div>
+
+<!-- 스위트 추가 모달 (기존 테스트런에 스위트 붙이기) -->
+<div id="addSuiteModal" class="modal-overlay" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="addSuiteModalTitle" style="width:520px;max-height:85vh;overflow-y:auto">
+    <div class="modal-head"><div class="modal-title" id="addSuiteModalTitle">스위트 추가</div><button type="button" class="modal-close" id="addSuiteCloseButton" aria-label="닫기">×</button></div>
+    <div class="form-field">
+      <span>이 테스트런에 추가할 스위트를 선택하세요 (이미 포함된 테스트케이스는 자동으로 제외됩니다)</span>
+      <div id="addSuiteCheckList" class="tc-picker-tree" style="max-height:260px"></div>
+    </div>
+    <div class="plan-form-actions">
+      <button type="button" class="btn btn-sm" id="addSuiteCancelButton">취소</button>
+      <button type="button" class="btn btn-sm btn-pri" id="addSuiteConfirmButton">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5. 연결 설정 ══ -->
+<div class="app-view" id="view-settings">
+  <div class="view-hd">
+    <div class="view-eyebrow">Settings</div>
+    <div class="view-h2">연결 설정</div>
+    <p class="view-sub">백엔드 서버 연결 정보를 설정합니다.</p>
+  </div>
+  <div class="set-body">
+    <div class="set-row">
+      <div class="set-card">
+        <h3>백엔드 연결</h3>
+        <p>Spring Boot 서버 주소를 입력하고 연결을 확인합니다.</p>
+        <div class="conn-row">
+          <input id="apiBaseUrl" type="url" class="form-input" placeholder="http://localhost:8080">
+          <button id="connectButton" class="btn btn-sm btn-pri">연결 확인</button>
+        </div>
+      </div>
+      <div class="set-card">
+        <h3>Jira 연동</h3>
+        <p>결함·요구사항을 Jira와 연동합니다. Atlassian 계정 이메일과 <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener">API 토큰</a>이 필요합니다.</p>
+        <div class="jira-settings-form">
+          <label class="form-field"><span>Base URL *</span><input id="jiraBaseUrl" type="url" class="form-input" placeholder="https://your-domain.atlassian.net"></label>
+          <label class="form-field"><span>이메일 *</span><input id="jiraEmail" type="email" class="form-input" placeholder="you@example.com"></label>
+          <label class="form-field"><span>API 토큰 *</span><input id="jiraApiToken" type="password" class="form-input" placeholder="저장된 토큰이 있으면 비워 두면 유지됩니다" autocomplete="off"></label>
+          <label class="form-field"><span>프로젝트 키 *</span><input id="jiraProjectKey" class="form-input" placeholder="예: TMS" maxlength="50"></label>
+          <label class="form-field"><span>TMS 웹 주소 (선택)</span><input id="jiraWebBaseUrl" type="url" class="form-input" placeholder="Jira에 역링크를 남길 TMS 주소 (선택)"></label>
+          <label class="configuration-active"><input id="jiraEnabled" type="checkbox" checked> 연동 사용</label>
+        </div>
+        <div class="conn-row" style="margin-top:10px">
+          <button id="jiraTestButton" type="button" class="btn btn-sm">🔌 연결 테스트</button>
+          <button id="jiraSaveButton" type="button" class="btn btn-sm btn-pri">저장</button>
+        </div>
+        <div id="jiraSettingsStatus" class="jira-settings-status" style="display:none"></div>
+      </div>
+      <div class="set-card">
+        <h3>프로그램 정보</h3>
+        <p>현재 실행 중인 애플리케이션 정보입니다.</p>
+        <div class="info-row"><span style="color:var(--text-muted)">버전</span><span id="version-pill-info" style="color:var(--text-secondary)">-</span></div>
+        <div class="info-row"><span style="color:var(--text-muted)">플랫폼</span><span id="platform-pill-info" style="color:var(--text-secondary)">-</span></div>
+        <div class="info-row"><span style="color:var(--text-muted)">백엔드</span><span style="color:var(--text-secondary)">Spring Boot 3.5.0</span></div>
+        <div class="info-row"><span style="color:var(--text-muted)">DB</span><span style="color:var(--text-secondary)">MySQL</span></div>
+      </div>
+      <div class="set-card configuration-card">
+        <div class="configuration-card-header">
+          <div><h3>Test Configuration</h3><p>서버, OS, 브라우저, 디바이스 조합을 재사용합니다.</p></div>
+          <button id="newConfigurationButton" type="button" class="btn btn-sm">＋ 새 Configuration</button>
+        </div>
+        <div class="configuration-manager">
+          <div id="configurationList" class="configuration-list"></div>
+          <form id="configurationForm" class="configuration-form">
+            <input id="configurationId" type="hidden">
+            <label class="form-field"><span>이름 *</span><input id="configurationName" class="form-input" maxlength="100" required></label>
+            <label class="form-field"><span>서버 환경</span><select id="configurationServer" class="form-input"><option value="">선택 안 함</option></select></label>
+            <div class="configuration-grid">
+              <label class="form-field"><span>OS</span><select id="configurationOs" class="form-input"><option value="">선택 안 함</option><option>MAC</option><option>WINDOWS</option><option>LINUX</option><option>IOS</option><option>ANDROID</option></select></label>
+              <label class="form-field"><span>브라우저</span><select id="configurationBrowser" class="form-input"><option value="">선택 안 함</option><option>CHROME</option><option>FIREFOX</option><option>SAFARI</option><option>EDGE</option><option>SAMSUNG_INTERNET</option><option>NONE</option></select></label>
+              <label class="form-field"><span>디바이스</span><select id="configurationDevice" class="form-input"><option value="">선택 안 함</option><option>DESKTOP</option><option>MOBILE</option><option>TABLET</option></select></label>
+            </div>
+            <label class="configuration-active"><input id="configurationActive" type="checkbox" checked> 활성 configuration</label>
+            <div class="plan-form-actions"><button id="deleteConfigurationButton" type="button" class="btn btn-sm btn-danger" disabled>삭제</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="set-card configuration-card">
+        <div class="configuration-card-header">
+          <div><h3>사용자 / 역할 관리</h3><p>담당자 선택과 권한 구분에 사용할 사용자를 관리합니다.</p></div>
+          <button id="newUserButton" type="button" class="btn btn-sm">＋ 새 사용자</button>
+        </div>
+        <div class="configuration-manager">
+          <div id="userList" class="configuration-list"></div>
+          <form id="userForm" class="configuration-form">
+            <input id="userId" type="hidden">
+            <label class="form-field"><span>이름 *</span><input id="userName" class="form-input" maxlength="100" required></label>
+            <label class="form-field"><span>이메일</span><input id="userEmail" type="email" class="form-input" maxlength="200" placeholder="owner@example.com"></label>
+            <label class="form-field"><span>역할 *</span><select id="userRole" class="form-input" required>
+              <option value="QA">QA</option>
+              <option value="QA_LEAD">QA Lead</option>
+              <option value="DEVELOPER">Developer</option>
+              <option value="VIEWER">Viewer</option>
+              <option value="ADMIN">Admin</option>
+            </select></label>
+            <label class="configuration-active"><input id="userActive" type="checkbox" checked> 활성 사용자</label>
+            <div class="plan-form-actions"><button id="deleteUserButton" type="button" class="btn btn-sm btn-danger" disabled>비활성화</button><button type="submit" class="btn btn-sm btn-pri">저장</button></div>
+          </form>
+        </div>
+      </div>
+      <div class="set-card configuration-card">
+        <div class="configuration-card-header">
+          <div><h3>영역 태그 관리</h3><p>테스트 케이스에 사용되는 영역 태그를 관리합니다.</p></div>
+        </div>
+        <div id="areaTagManageList" class="area-tag-manage-list"></div>
+      </div>
+      <div class="set-card">
+        <h3>데이터 백업 / 복구</h3>
+        <p>전체 데이터(모든 프로젝트·테스트케이스·실행 결과 등)와 첨부파일을 하나의 백업 파일로 저장하고, 필요 시 그 파일로 복구합니다.</p>
+        <div class="backup-actions">
+          <button type="button" class="btn btn-sm btn-pri" id="backupExportBtn" onclick="downloadDataBackup()">⬇ 백업 다운로드</button>
+          <button type="button" class="btn btn-sm btn-danger" id="backupRestoreBtn" onclick="restoreDataBackup()">⬆ 백업으로 복구</button>
+        </div>
+        <p class="backup-warning">⚠ 복구하면 현재 데이터가 백업 시점 상태로 <strong>완전히 덮어쓰기</strong> 됩니다. 되돌릴 수 없으니 먼저 현재 상태를 백업해 두세요.</p>
+
+        <div class="backup-settings">
+          <div class="backup-set-row">
+            <span class="backup-set-label">기본 백업 폴더</span>
+            <div class="backup-folder-pick">
+              <input id="backupDirInput" class="form-input" placeholder="폴더를 지정하면 다이얼로그 없이 바로 저장됩니다" readonly>
+              <button type="button" class="btn btn-sm" id="backupChooseDirBtn" onclick="chooseBackupDir()">폴더 선택</button>
+              <button type="button" class="btn btn-sm btn-pri" id="backupNowBtn" onclick="backupNowToDir()">이 폴더에 백업</button>
+            </div>
+          </div>
+          <div class="backup-set-row">
+            <label class="backup-auto-toggle"><input type="checkbox" id="backupAutoEnabled" onchange="saveBackupSettingsFromUI()"> 자동 백업 사용</label>
+            <span class="backup-auto-opts">
+              <input type="number" id="backupIntervalDays" class="form-input backup-num" min="1" max="365" value="1" onchange="saveBackupSettingsFromUI()"> 일마다 ·
+              최근 <input type="number" id="backupKeepCount" class="form-input backup-num" min="1" max="100" value="7" onchange="saveBackupSettingsFromUI()"> 개 보관
+            </span>
+          </div>
+          <p class="backup-laststamp">마지막 백업: <span id="backupLastAt">없음</span></p>
+          <p class="backup-note">자동 백업은 앱을 켤 때 마지막 백업이 설정한 기간보다 오래되었으면 기본 폴더에 조용히 저장됩니다. (앱이 꺼져 있는 동안에는 실행되지 않습니다.)</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</main>
+</div>
+
+<!-- ══ 프로젝트 생성/수정 모달 (#14) ══ -->
+<div id="createProjectModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:440px">
+    <div class="modal-hd"><span id="createProjectModalTitle">새 프로젝트 만들기</span><button class="modal-close" onclick="closeCreateProjectModal()">✕</button></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+      <label class="form-field"><span>프로젝트 이름 *</span><input id="newProjectName" class="form-input" maxlength="200" placeholder="My Project" required></label>
+      <label class="form-field"><span>설명</span><textarea id="newProjectDesc" class="form-input" rows="3" placeholder="프로젝트 설명을 입력하세요"></textarea></label>
+      <label class="form-field"><span>담당자</span><input id="newProjectOwner" class="form-input" maxlength="100" placeholder="홍길동"></label>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="closeCreateProjectModal()">취소</button>
+      <button class="btn btn-sm btn-pri" id="createProjectSubmitButton" onclick="submitProjectModal()">생성</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 엑셀 임포트 모달 (#2) ══ -->
+<div id="excelImportModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:500px">
+    <div class="modal-hd"><span>📥 엑셀/CSV로 테스트케이스 가져오기</span><button class="modal-close" onclick="closeExcelImportModal()">✕</button></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+      <div class="excel-upload-zone" id="excelDropZone" onclick="document.getElementById('excelFileInput').click()"
+           ondragover="excelDragOver(event)" ondragleave="excelDragLeave(event)" ondrop="excelDrop(event)">
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" onchange="excelFileSelected(event)">
+        <div class="excel-upload-icon">📊</div>
+        <div class="excel-upload-text">클릭하거나 파일을 드래그하여 업로드</div>
+        <div class="excel-upload-hint">.xlsx, .xls, .csv 지원 · 엑셀은 시트=폴더, CSV는 '폴더' 컬럼=하위 폴더</div>
+      </div>
+      <div id="excelFileInfo" style="display:none;font-size:12px;color:var(--text-secondary);background:var(--bg-input);padding:8px 12px;border-radius:var(--r-md)"></div>
+      <div style="font-size:11px;color:var(--text-muted)">
+        <strong>컬럼 매핑 가이드</strong> (헤더명이 일치하면 자동 인식)<br>
+        제목/title, 설명/description, 전제조건/precondition, 스텝/steps,<br>
+        우선순위/priority, 상태/status, 유형/type, OS/os, 브라우저/browser
+      </div>
+      <div id="excelImportResult" style="display:none"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="closeExcelImportModal()">닫기</button>
+      <button class="btn btn-sm btn-pri" id="excelImportBtn" onclick="doExcelImport()" disabled>가져오기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 엑셀 내보내기 모달 ══ -->
+<div id="exportModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:480px">
+    <div class="modal-hd"><span>📤 엑셀로 내보내기</span><button class="modal-close" onclick="closeExportModal()">✕</button></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+      <p style="font-size:12px;color:var(--text-muted)">내보낼 항목을 <strong>여러 개 선택</strong>할 수 있습니다. 현재 프로젝트 범위로 내보냅니다.</p>
+      <div class="export-format" id="exportFormatToggle">
+        <span class="export-format-label">형식</span>
+        <button type="button" class="export-format-btn active" data-fmt="xlsx" onclick="setExportFormat('xlsx')">Excel (.xlsx)</button>
+        <button type="button" class="export-format-btn" data-fmt="csv" onclick="setExportFormat('csv')">CSV (.csv)</button>
+      </div>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-cases" checked>
+        <span class="export-opt-ico">🧪</span>
+        <span><strong>테스트케이스 목록</strong><small>현재 프로젝트의 모든 테스트케이스</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-cases-filtered">
+        <span class="export-opt-ico">🔎</span>
+        <span><strong>필터링된 결과만</strong><small id="exportFilteredHint">현재 목록에 보이는 케이스만</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-runs">
+        <span class="export-opt-ico">📈</span>
+        <span><strong>테스트런 결과</strong><small>케이스별 실행 결과(통과/실패/사유 등)</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="defects">
+        <span class="export-opt-ico">🐞</span>
+        <span><strong>결함 목록</strong><small>등록된 결함 전체</small></span>
+      </label>
+      <label class="export-opt">
+        <input type="checkbox" class="export-check" value="test-plans">
+        <span class="export-opt-ico">🗂️</span>
+        <span><strong>테스트플랜 구조</strong><small>플랜 → 스위트 → 케이스 계층</small></span>
+      </label>
+      <p class="export-hint" id="exportComboHint"></p>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm" onclick="closeExportModal()">닫기</button>
+      <button class="btn btn-sm btn-pri" id="exportRunBtn" onclick="runExport()">선택 항목 내보내기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 스위트 관리 모달 (#3) ══ -->
+<div id="suiteManagerModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:680px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-head">
+      <div class="modal-title">📋 테스트 스위트 관리</div>
+      <button class="modal-close" onclick="closeSuiteManagerModal()">×</button>
+    </div>
+    <div style="display:flex;gap:12px;flex:1;overflow:hidden;min-height:0">
+      <!-- 스위트 목록 -->
+      <div style="width:220px;flex-shrink:0;display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">스위트 목록</span>
+          <button class="btn btn-sm" onclick="startNewSuite()">＋ 새 스위트</button>
+        </div>
+        <div id="suiteManagerList" class="suite-manager-list"></div>
+      </div>
+      <!-- 스위트 편집 -->
+      <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-left:12px;border-left:1px solid var(--border)">
+        <div id="suiteEditorEmpty" style="color:var(--text-muted);font-size:13px;padding:24px 0">스위트를 선택하거나 새로 만드세요.</div>
+        <div id="suiteEditorForm" hidden style="display:flex;flex-direction:column;gap:12px">
+          <input id="smSuiteId" type="hidden">
+          <label class="form-field"><span>스위트 이름 *</span><input id="smSuiteName" class="form-input" maxlength="200" required placeholder="예) 로그인 회귀 테스트"></label>
+          <label class="form-field"><span>설명</span><textarea id="smSuiteDesc" class="form-input" rows="2" placeholder="이 스위트의 목적"></textarea></label>
+          <!-- TC 피커 (#4) -->
+          <div class="form-field">
+            <span>테스트케이스 선택</span>
+            <div class="tc-picker-filter">
+              <input id="tcPickerSearch" class="form-input" placeholder="🔍 제목 검색..." oninput="filterTcPicker()">
+              <select id="tcPickerPriority" class="form-input" onchange="filterTcPicker()"><option value="">우선순위 전체</option><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select>
+              <select id="tcPickerStatus" class="form-input" onchange="filterTcPicker()"><option value="">상태 전체</option><option value="DRAFT">Draft</option><option value="READY">Ready</option><option value="COMPLETED">Completed</option></select>
+            </div>
+            <div id="tcPickerTree" class="tc-picker-tree"></div>
+            <div id="tcPickerSelected" class="tc-picker-selected-bar">선택된 TC: <strong id="tcPickerCount">0</strong>건</div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+            <button type="button" class="btn btn-sm btn-danger" id="smDeleteBtn" onclick="deleteSuiteFromManager()" hidden>삭제</button>
+            <button type="button" class="btn btn-sm" id="smExportBtn" onclick="exportSuiteToExcel()" hidden>⬇ 엑셀 다운로드</button>
+            <button type="button" class="btn btn-sm btn-pri" onclick="saveSuiteFromManager()">저장</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 테스트 플랜 - 핵심 테스트 대상 TC 피커 모달 ══ -->
+<div id="planTcPickerModal" class="modal-overlay" hidden>
+  <div class="modal-card" style="width:520px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-head">
+      <div class="modal-title">🧩 핵심 테스트 대상 선택</div>
+      <button class="modal-close" onclick="closePlanTcPickerModal()">×</button>
+    </div>
+    <div class="form-field" style="overflow:hidden;display:flex;flex-direction:column;flex:1;min-height:0">
+      <div class="tc-picker-filter">
+        <input id="planTcPickerSearch" class="form-input" placeholder="🔍 제목 검색..." oninput="filterPlanTcPicker()">
+        <select id="planTcPickerPriority" class="form-input" onchange="filterPlanTcPicker()"><option value="">우선순위 전체</option><option value="HIGH">높음</option><option value="MEDIUM">중간</option><option value="LOW">낮음</option></select>
+        <select id="planTcPickerStatus" class="form-input" onchange="filterPlanTcPicker()"><option value="">상태 전체</option><option value="DRAFT">Draft</option><option value="READY">Ready</option><option value="COMPLETED">Completed</option></select>
+      </div>
+      <div id="planTcPickerTree" class="tc-picker-tree"></div>
+      <div class="tc-picker-selected-bar">선택된 TC: <strong id="planTcPickerCount">0</strong>건</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+      <button type="button" class="btn btn-sm btn-pri" onclick="closePlanTcPickerModal()">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 실패/차단/재테스트 사유 모달 (#9) ══ -->
+<div id="failureReasonModal" class="failure-modal-overlay" style="display:none">
+  <div class="failure-modal">
+    <h3 id="failureReasonTitle">🔴 실패 사유 입력</h3>
+    <p style="font-size:12px;color:var(--text-muted)" id="failureReasonDesc">실패 이유 또는 Jira 버그 티켓 URL을 입력하세요.</p>
+    <textarea id="failureReasonInput" class="form-input" rows="4" placeholder="예) https://jira.company.com/browse/BUG-123&#10;또는 실패 원인을 간략히 설명"></textarea>
+    <p id="failureReasonError" class="failure-modal-error" hidden>사유를 입력해야 기록할 수 있습니다.</p>
+    <div id="failureReasonAttachSection" class="failure-modal-attach" hidden>
+      <div class="failure-modal-attach-head">
+        <span style="font-size:12px;font-weight:600">📎 첨부파일 (스크린샷·로그 등)</span>
+        <button type="button" class="btn btn-sm" id="failureReasonAttachBtn" onclick="uploadFailureReasonAttachment()">파일 첨부</button>
+      </div>
+      <div id="failureReasonAttachList" class="attach-list"></div>
+    </div>
+    <div class="failure-modal-actions">
+      <button class="btn btn-sm" onclick="cancelFailureReason()">취소</button>
+      <button class="btn btn-sm btn-danger" id="failureReasonConfirmBtn" onclick="confirmFailureReason()">실패로 기록</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>

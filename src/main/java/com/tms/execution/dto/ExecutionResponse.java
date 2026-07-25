@@ -28,6 +28,7 @@ public record ExecutionResponse(
         int failed,
         int blocked,
         int retest,
+        int notImplemented,
         int progressPct,
         List<ExecutionItemResponse> items,
         LocalDateTime createdAt,
@@ -53,6 +54,7 @@ public record ExecutionResponse(
         int failed = count(all, ResultStatus.FAILED);
         int blocked = count(all, ResultStatus.BLOCKED);
         int retest = count(all, ResultStatus.RETEST);
+        int notImplemented = count(all, ResultStatus.NOT_IMPLEMENTED);
         int untested = count(all, ResultStatus.UNTESTED);
         int executed = total - untested;
         int progressPct = total == 0 ? 0 : Math.round((executed * 100f) / total);
@@ -71,7 +73,7 @@ public record ExecutionResponse(
                 execution.getEnvironmentDetail(),
                 execution.getStatus(),
                 execution.getAssignee(),
-                total, untested, passed, failed, blocked, retest, progressPct,
+                total, untested, passed, failed, blocked, retest, notImplemented, progressPct,
                 items,
                 execution.getCreatedAt(),
                 execution.getUpdatedAt(),

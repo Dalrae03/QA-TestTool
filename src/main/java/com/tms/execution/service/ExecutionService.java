@@ -15,6 +15,7 @@ import com.tms.audit.entity.AuditAction;
 import com.tms.audit.service.AuditLogService;
 import com.tms.execution.entity.Execution;
 import com.tms.execution.entity.ExecutionItem;
+import com.tms.execution.entity.ResultStatus;
 import com.tms.execution.repository.ExecutionItemRepository;
 import com.tms.execution.repository.ExecutionRepository;
 import com.tms.configuration.entity.TestConfiguration;
@@ -23,6 +24,7 @@ import com.tms.global.exception.InvalidRequestException;
 import com.tms.global.util.ProjectScope;
 import com.tms.testcase.entity.TestCase;
 import com.tms.testcase.entity.TestCaseVersion;
+import com.tms.testcase.entity.TestFolder;
 import com.tms.testcase.repository.TestCaseRepository;
 import com.tms.testcase.repository.TestCaseVersionRepository;
 import com.tms.testplan.entity.TestPlan;
@@ -110,7 +112,13 @@ public class ExecutionService {
                 .orElse(null);
         Integer versionNumber = latest != null ? latest.getVersionNumber() : null;
         String versionLabel = latest != null ? latest.getLabel() : null;
-        execution.addItem(testCase.getId(), testCase.getTitle(), versionNumber, versionLabel, sourceSuiteId, sourceSuiteName);
+        // 케이스가 현재 속한 폴더(섹션)를 함께 스냅샷 — 런 안에서 폴더별로 묶고, 표시 ID 접두사에 쓰기 위함.
+        TestFolder folder = testCase.getFolder();
+        Long sourceFolderId = folder != null ? folder.getId() : null;
+        String sourceFolderName = folder != null ? folder.getName() : null;
+        String sourceFolderCode = folder != null ? folder.effectiveCode() : null;
+        execution.addItem(testCase.getId(), testCase.getTitle(), versionNumber, versionLabel,
+                sourceSuiteId, sourceSuiteName, sourceFolderId, sourceFolderName, sourceFolderCode);
     }
 
     public List<ExecutionResponse> getExecutions(Long projectId, String assignee) {
@@ -536,6 +544,10 @@ public class ExecutionService {
                 .findFirst()
                 .orElseThrow(() -> new EntityNotFoundException("ExecutionItem not found. id=" + itemId));
         item.record(request.status(), normalizeOptional(request.comment()), normalizeOptional(request.failureReason()));
+        // 첫 실제 결과가 들어오면 '준비됨' 런을 '진행 중'으로 자동 전환 (미실행 되돌리기는 제외).
+        if (request.status() != ResultStatus.UNTESTED) {
+            execution.startIfReady();
+        }
         auditLogService.log(AuditLogService.TEST_RUN, executionId, AuditAction.RESULT_RECORDED,
                 "'" + item.getCaseTitle() + "' 결과: " + request.status()
                         + " (런 '" + execution.getName() + "')");
@@ -561,6 +573,10 @@ public class ExecutionService {
         String failureReason = normalizeOptional(request.failureReason());
         for (Long id : targetIds) {
             itemsById.get(id).record(request.status(), comment, failureReason);
+        }
+        // 첫 실제 결과가 들어오면 '준비됨' 런을 '진행 중'으로 자동 전환 (미실행 되돌리기는 제외).
+        if (request.status() != ResultStatus.UNTESTED) {
+            execution.startIfReady();
         }
         auditLogService.log(AuditLogService.TEST_RUN, executionId, AuditAction.RESULT_RECORDED,
                 "일괄 결과 기록: " + targetIds.size() + "건 → " + request.status()

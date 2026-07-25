@@ -29,9 +29,11 @@ public class DefectService {
         this.auditLogService = auditLogService;
     }
 
-    public List<DefectResponse> getAll() {
-        return defectRepository.findAllByOrderByCreatedAtDesc().stream()
-                .map(DefectResponse::from).toList();
+    public List<DefectResponse> getAll(Long projectId) {
+        List<Defect> defects = projectId != null
+                ? defectRepository.findAllByProjectIdOrderByCreatedAtDesc(projectId)
+                : defectRepository.findAllByOrderByCreatedAtDesc();
+        return defects.stream().map(DefectResponse::from).toList();
     }
 
     public DefectResponse get(Long id) {
@@ -44,6 +46,7 @@ public class DefectService {
                 request.title(), request.description(),
                 request.severity(), request.status(), request.externalUrl()
         );
+        defect.setProjectId(request.projectId());
         Defect saved = defectRepository.save(defect);
         auditLogService.log(AuditLogService.DEFECT, saved.getId(), AuditAction.CREATED,
                 "결함 '" + saved.getTitle() + "'이(가) 생성되었습니다. (심각도 " + saved.getSeverity() + ")");

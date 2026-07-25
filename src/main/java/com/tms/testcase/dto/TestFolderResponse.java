@@ -7,6 +7,8 @@ import java.util.List;
 public record TestFolderResponse(
         Long id,
         String name,
+        String code,
+        String effectiveCode,
         Long parentId,
         List<TestFolderResponse> children,
         LocalDateTime createdAt,
@@ -16,6 +18,8 @@ public record TestFolderResponse(
         return new TestFolderResponse(
                 folder.getId(),
                 folder.getName(),
+                folder.getCode(),
+                folder.effectiveCode(),
                 folder.getParent() == null ? null : folder.getParent().getId(),
                 folder.getChildren().stream().map(TestFolderResponse::from).toList(),
                 folder.getCreatedAt(),
@@ -29,6 +33,8 @@ public record TestFolderResponse(
         return new TestFolderResponse(
                 folder.getId(),
                 folder.getName(),
+                folder.getCode(),
+                folder.effectiveCode(),
                 folder.getParent() == null ? null : folder.getParent().getId(),
                 List.of(),
                 folder.getCreatedAt(),
