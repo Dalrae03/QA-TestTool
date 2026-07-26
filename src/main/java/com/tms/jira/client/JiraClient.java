@@ -33,7 +33,7 @@ public class JiraClient {
                         "project", Map.of("key", cfg.projectKey()),
                         "summary", summary,
                         "description", toAdf(description),
-                        "issuetype", Map.of("name", issueType),
+                        "issuetype", Map.of("name", resolveIssueTypeName(cfg, issueType)),
                         "priority", Map.of("name", priority)
                 )
         );
@@ -46,6 +46,34 @@ public class JiraClient {
             return (String) response.get("key");
         } catch (HttpClientErrorException e) {
             throw new InvalidRequestException("Jira 이슈 생성 실패: " + e.getResponseBodyAsString());
+        }
+    }
+
+    /**
+     * 프로젝트에서 실제 사용 가능한 이슈 유형 이름 해석.
+     * Jira 사이트 언어에 따라 유형 이름이 현지화되므로("Bug" ↔ "버그") 요청한 이름이 없으면
+     * 알려진 동의어로 매칭하고, 조회 실패 시 요청한 이름을 그대로 사용한다.
+     */
+    @SuppressWarnings("unchecked")
+    private String resolveIssueTypeName(JiraConfig cfg, String requested) {
+        List<String> aliases = List.of(requested, "Bug", "버그");
+        try {
+            Map<String, Object> meta = client(cfg).get()
+                    .uri("/rest/api/3/issue/createmeta?projectKeys={key}", cfg.projectKey())
+                    .retrieve()
+                    .body(Map.class);
+            List<Map<String, Object>> projects = (List<Map<String, Object>>) meta.get("projects");
+            if (projects == null || projects.isEmpty()) return requested;
+            List<Map<String, Object>> issueTypes = (List<Map<String, Object>>) projects.get(0).get("issuetypes");
+            if (issueTypes == null) return requested;
+            for (String alias : aliases) {
+                for (Map<String, Object> type : issueTypes) {
+                    if (alias.equalsIgnoreCase((String) type.get("name"))) return (String) type.get("name");
+                }
+            }
+            return requested;
+        } catch (HttpClientErrorException | ResourceAccessException e) {
+            return requested;
         }
     }
 
