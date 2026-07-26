@@ -261,6 +261,104 @@ on("GET", "/api/testcases/:id/audit-logs", async ({ params }) =>
     .eq("entity_type", "TEST_CASE").eq("entity_id", params.id)
     .order("created_at", { ascending: false })) || []).map(auditToResponse));
 
+// ── 대시보드 통계 ──────────────────────────────────────────────────
+// NOTE: 스키마 defects엔 project_id가 없어(백엔드 V7로 추가) 결함 통계는 전역 집계.
+const SEVERITY_ORDER = { CRITICAL: 0, MAJOR: 1, MINOR: 2, TRIVIAL: 3 };
+async function dashboardStats(projectId) {
+  let tcq = supabase.from("test_cases")
+    .select("id,status,priority,test_case_area_tags(area_tags(id,name)),test_case_defects(defects(id,severity))");
+  if (projectId != null) tcq = tcq.eq("project_id", projectId);
+  const testCases = ok(await tcq) || [];
+
+  let exq = supabase.from("executions").select("id,name,status,created_at");
+  if (projectId != null) exq = exq.eq("project_id", projectId);
+  const executions = ok(await exq.order("created_at", { ascending: false })) || [];
+  const execIds = executions.map((e) => e.id);
+  const items = execIds.length
+    ? (ok(await supabase.from("execution_items").select("execution_id,status").in("execution_id", execIds)) || [])
+    : [];
+
+  const defects = ok(await supabase.from("defects").select("id,title,severity,status").order("created_at", { ascending: false })) || [];
+  const logs = ok(await supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(50)) || [];
+
+  const tally = (arr, key) => arr.reduce((m, x) => { const k = key(x); m[k] = (m[k] || 0) + 1; return m; }, {});
+
+  const testCasesByStatus = tally(testCases, (t) => t.status);
+  const testCasesByPriority = tally(testCases, (t) => t.priority);
+  const testCasesByAreaTag = {};
+  for (const t of testCases) for (const l of (t.test_case_area_tags || [])) {
+    const name = l.area_tags && l.area_tags.name;
+    if (name) testCasesByAreaTag[name] = (testCasesByAreaTag[name] || 0) + 1;
+  }
+
+  const itemsByExec = new Map();
+  for (const it of items) {
+    if (!itemsByExec.has(it.execution_id)) itemsByExec.set(it.execution_id, []);
+    itemsByExec.get(it.execution_id).push(it.status);
+  }
+  const activeExecutions = executions.filter((e) => e.status === "IN_PROGRESS").length;
+  const completedExecutions = executions.filter((e) => e.status === "COMPLETED").length;
+  const totalItems = items.length;
+  const passedItems = items.filter((i) => i.status === "PASSED").length;
+  const passRate = totalItems > 0 ? (passedItems / totalItems) * 100 : 0;
+  const recentExecutions = executions.slice(0, 10).map((e) => {
+    const st = itemsByExec.get(e.id) || [];
+    const total = st.length;
+    const passed = st.filter((s) => s === "PASSED").length;
+    const failed = st.filter((s) => s === "FAILED").length;
+    const blocked = st.filter((s) => s === "BLOCKED").length;
+    return { id: e.id, name: e.name, status: e.status, total, passed, failed, blocked, untested: total - passed - failed - blocked, createdAt: e.created_at };
+  });
+
+  // 결함은 스키마에 project_id가 없어, 현재 프로젝트의 테스트케이스에 연결된 결함으로 스코프한다
+  // (프로젝트 격리). projectId 미지정 시 전역 집계.
+  const projectDefectIds = projectId != null
+    ? new Set(testCases.flatMap((t) => (t.test_case_defects || []).map((l) => l.defects && l.defects.id).filter((x) => x != null)))
+    : null;
+  const scopedDefects = projectDefectIds ? defects.filter((d) => projectDefectIds.has(d.id)) : defects;
+
+  const defectsBySeverity = tally(scopedDefects, (d) => d.severity);
+  const defectsByStatus = tally(scopedDefects, (d) => d.status);
+  const openDefects = scopedDefects
+    .filter((d) => d.status === "OPEN" || d.status === "IN_PROGRESS")
+    .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9))
+    .map((d) => ({ id: d.id, title: d.title, severity: d.severity, status: d.status }));
+
+  const byArea = new Map(); // areaName -> (severity -> Set<defectId>)
+  for (const t of testCases) {
+    const tags = (t.test_case_area_tags || []).map((l) => l.area_tags).filter(Boolean);
+    const defs = (t.test_case_defects || []).map((l) => l.defects).filter(Boolean);
+    if (!tags.length || !defs.length) continue;
+    for (const tag of tags) {
+      if (!byArea.has(tag.name)) byArea.set(tag.name, new Map());
+      const sevMap = byArea.get(tag.name);
+      for (const d of defs) {
+        if (!sevMap.has(d.severity)) sevMap.set(d.severity, new Set());
+        sevMap.get(d.severity).add(d.id);
+      }
+    }
+  }
+  const defectHeatmap = [...byArea.entries()].map(([areaTag, sevMap]) => {
+    const bySeverity = {}; const all = new Set();
+    for (const [sev, ids] of sevMap.entries()) { bySeverity[sev] = ids.size; for (const id of ids) all.add(id); }
+    return { areaTag, bySeverity, total: all.size };
+  }).sort((a, b) => b.total - a.total);
+
+  const projectTcIds = projectId != null ? new Set(testCases.map((t) => t.id)) : null;
+  const recentAuditLogs = logs
+    .filter((l) => projectTcIds == null || l.entity_type !== "TEST_CASE" || projectTcIds.has(l.entity_id))
+    .slice(0, 20)
+    .map((l) => ({ id: l.id, action: l.action, entityType: l.entity_type, entityId: l.entity_id, summary: l.summary, actor: l.actor, createdAt: l.created_at }));
+
+  return {
+    totalTestCases: testCases.length, testCasesByStatus, testCasesByPriority, testCasesByAreaTag,
+    totalExecutions: executions.length, activeExecutions, completedExecutions, passRate, recentExecutions,
+    totalDefects: scopedDefects.length, defectsBySeverity, defectsByStatus,
+    defectHeatmap, openDefects, recentAuditLogs,
+  };
+}
+on("GET", "/api/dashboard/stats", ({ query }) => dashboardStats(query.projectId != null ? query.projectId : null));
+
 // ── 디스패치 ───────────────────────────────────────────────────────
 export async function handleRequest(options) {
   const { url, method = "GET", body } = options || {};
