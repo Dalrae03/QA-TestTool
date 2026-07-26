@@ -63,7 +63,8 @@ npm run dev                  # http://localhost:5173 에서 "연결 성공" 확�
 - ✅ **Jira 설정 저장/조회** (`src/adapter/jira.js`) — 순수 DB
 - ✅ **백업/복구** → 전체 데이터 JSON 스냅샷 내보내기/복구 (`src/adapter/backup.js`, id 재매핑)
 - ⬜ **Jira 연결테스트·push·pull·sync** — 외부 Jira API 호출이라 Supabase Edge Function(서버측) 필요
-- ⬜ **엑셀/CSV 내보내기**(`/api/export/*`) — 후속 (현재 안내 메시지)
+- ✅ **엑셀/CSV 내보내기**(`/api/export/*`) → SheetJS로 클라이언트 생성 (`src/adapter/export.js`)
+  (테스트케이스·필터·테스트런·결함·플랜; 다중선택 CSV는 xlsx로 대체 — 브라우저 zip 회피)
 - ⬜ 운영용 RLS 정책 (현재 `0002` 개발 전면 허용)
 
 ### 스키마/인프라 적용 필요(DB 소유자)

@@ -19,6 +19,7 @@ import { registerAttachmentRoutes, uploadAttachmentImpl, downloadAttachmentImpl 
 import { uploadExcelImpl } from "./excel.js";
 import { registerJiraRoutes } from "./jira.js";
 import { downloadBackupImpl, uploadBackupImpl } from "./backup.js";
+import { exportImpl } from "./export.js";
 import { logAudit, snapshotTestCase, auditSnapshotOf, recordTcUpdates, restoreTestCaseVersion } from "./history.js";
 
 export class HttpError extends Error {
@@ -429,7 +430,11 @@ export function installDesktopApi() {
     request: (opts) => handleRequest(opts),
     uploadExcel: (opts) => uploadExcelImpl(opts),
     uploadAttachment: (opts) => uploadAttachmentImpl(opts),
-    downloadAttachment: (opts) => downloadAttachmentImpl(opts),
+    // downloadAttachment 셰임은 첨부 다운로드와 엑셀/CSV 내보내기(/api/export/...)를 공용으로 탄다.
+    downloadAttachment: (opts) => {
+      try { if (new URL(opts.url).pathname.startsWith("/api/export/")) return exportImpl(opts); } catch (_e) { /* fall through */ }
+      return downloadAttachmentImpl(opts);
+    },
     downloadBackup: (opts) => downloadBackupImpl(opts),
     uploadBackup: () => uploadBackupImpl(),
     chooseDirectory: async () => ({ canceled: true, dir: null }), // 웹은 폴더 접근 불가 → 자동백업 폴더 기능 비활성
