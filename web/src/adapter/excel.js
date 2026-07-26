@@ -68,7 +68,12 @@ export async function uploadExcelImpl(options) {
     const file = options && options.file;
     if (!file) return { ok: false, status: 400, data: { message: "파일을 읽을 수 없습니다." } };
     const projectId = options.projectId ?? null;
-    const XLSX = await import("xlsx");
+    // xlsx는 CJS 패키지 — 번들러 interop에 따라 named/default 위치가 달라질 수 있어 방어적으로 처리.
+    const mod = await import("xlsx");
+    const XLSX = (mod && typeof mod.read === "function") ? mod : (mod.default || mod);
+    if (!XLSX || typeof XLSX.read !== "function") {
+      return { ok: false, status: 500, data: { message: "엑셀 파서를 로드하지 못했습니다. 'npm install' 로 xlsx 의존성을 설치했는지 확인하세요." } };
+    }
     const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
 
     const errors = [];

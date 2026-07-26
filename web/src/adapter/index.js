@@ -19,6 +19,7 @@ import { registerAttachmentRoutes, uploadAttachmentImpl, downloadAttachmentImpl 
 import { uploadExcelImpl } from "./excel.js";
 import { registerJiraRoutes } from "./jira.js";
 import { downloadBackupImpl, uploadBackupImpl } from "./backup.js";
+import { logAudit, snapshotTestCase, auditSnapshotOf, recordTcUpdates, restoreTestCaseVersion } from "./history.js";
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -230,36 +231,66 @@ on("GET", "/api/testcases", async ({ query }) => {
 on("POST", "/api/testcases", async ({ body }) => {
   const id = ok(await supabase.from("test_cases").insert(tcRequestToRow(body)).select("id").single()).id;
   await syncAreaTags(id, body.areaTagIds);
+  await logAudit("TEST_CASE", id, "CREATED", "testCase", null, body.title, `테스트케이스 '${body.title}' 생성`);
+  await snapshotTestCase(id, "최초 생성");
   return fetchTestCase(id);
 });
 on("GET", "/api/testcases/:id", ({ params }) => fetchTestCase(params.id));
 on("PUT", "/api/testcases/:id", async ({ params, body }) => {
+  const before = await auditSnapshotOf(params.id);
   ok(await supabase.from("test_cases").update(tcRequestToRow(body)).eq("id", params.id));
   await syncAreaTags(params.id, body.areaTagIds);
+  const after = await auditSnapshotOf(params.id);
+  await recordTcUpdates(params.id, before, after);
+  // 실제 변경이 있을 때만 버전 스냅샷을 남긴다.
+  if (before && after && JSON.stringify(before) !== JSON.stringify(after)) {
+    await snapshotTestCase(params.id, "테스트케이스 수정");
+  }
   return fetchTestCase(params.id);
 });
 on("PATCH", "/api/testcases/:id/status", async ({ params, body }) => {
+  const before = await auditSnapshotOf(params.id);
+  if (before && before.status === body.status) return fetchTestCase(params.id); // 변경 없음
   ok(await supabase.from("test_cases").update({ status: body.status }).eq("id", params.id));
+  await logAudit("TEST_CASE", params.id, "STATUS_CHANGED", "status", before && before.status, body.status);
+  await snapshotTestCase(params.id, "상태 변경");
   return fetchTestCase(params.id);
 });
 on("PATCH", "/api/testcases/:id/folder", async ({ params, body }) => {
+  const before = await auditSnapshotOf(params.id);
   ok(await supabase.from("test_cases").update({ folder_id: nn(body.folderId) }).eq("id", params.id));
+  const after = await auditSnapshotOf(params.id);
+  if (before && after && before.folder !== after.folder) {
+    await logAudit("TEST_CASE", params.id, "MOVED", "folder", before.folder, after.folder);
+    await snapshotTestCase(params.id, "폴더 변경");
+  }
   return fetchTestCase(params.id);
 });
-on("DELETE", "/api/testcases/:id", ({ params }) => removeById("test_cases", params.id));
+on("DELETE", "/api/testcases/:id", async ({ params }) => {
+  const snap = await auditSnapshotOf(params.id);
+  await logAudit("TEST_CASE", params.id, "DELETED", "testCase", snap && snap.title, null, `테스트케이스 삭제`);
+  return removeById("test_cases", params.id);
+});
 on("POST", "/api/testcases/:id/defects/:defectId", async ({ params }) => {
   ok(await supabase.from("test_case_defects")
     .upsert({ test_case_id: params.id, defect_id: params.defectId }, { onConflict: "test_case_id,defect_id", ignoreDuplicates: true }));
+  await logAudit("TEST_CASE", params.id, "DEFECT_LINKED", "defects", null, `#${params.defectId}`, `결함 #${params.defectId} 연결`);
   return fetchTestCase(params.id);
 });
 on("DELETE", "/api/testcases/:id/defects/:defectId", async ({ params }) => {
   ok(await supabase.from("test_case_defects").delete()
     .eq("test_case_id", params.id).eq("defect_id", params.defectId));
+  await logAudit("TEST_CASE", params.id, "DEFECT_UNLINKED", "defects", `#${params.defectId}`, null, `결함 #${params.defectId} 연결 해제`);
   return fetchTestCase(params.id);
 });
 on("GET", "/api/testcases/:id/versions", async ({ params }) =>
   (ok(await supabase.from("test_case_versions").select("*")
     .eq("test_case_id", params.id).order("version_number", { ascending: false })) || []).map(versionToResponse));
+on("POST", "/api/testcases/:id/versions/:versionId/restore", async ({ params }) => {
+  const okRestore = await restoreTestCaseVersion(params.id, params.versionId);
+  if (!okRestore) throw new HttpError(404, `버전 #${params.versionId} 을(를) 복원할 수 없습니다.`);
+  return fetchTestCase(params.id);
+});
 on("GET", "/api/testcases/:id/audit-logs", async ({ params }) =>
   (ok(await supabase.from("audit_logs").select("*")
     .eq("entity_type", "TEST_CASE").eq("entity_id", params.id)
