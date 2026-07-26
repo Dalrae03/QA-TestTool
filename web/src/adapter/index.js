@@ -15,6 +15,10 @@ import {
   TC_SELECT,
 } from "./mappers.js";
 import { registerRunRoutes } from "./runs.js";
+import { registerAttachmentRoutes, uploadAttachmentImpl, downloadAttachmentImpl } from "./attachments.js";
+import { uploadExcelImpl } from "./excel.js";
+import { registerJiraRoutes } from "./jira.js";
+import { downloadBackupImpl, uploadBackupImpl } from "./backup.js";
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -392,15 +396,17 @@ export function installDesktopApi() {
   window.desktopApi = {
     getConfig: async () => ({ platform: "web", version: "0.1.0", defaultApiBaseUrl: "http://localhost:8080" }),
     request: (opts) => handleRequest(opts),
-    uploadExcel: notSupported("엑셀 임포트는 후속 단계에서 지원됩니다."),
-    uploadAttachment: notSupported("첨부 업로드는 후속 단계(Supabase Storage)에서 지원됩니다."),
-    downloadAttachment: notSupported("첨부 다운로드는 후속 단계에서 지원됩니다."),
-    downloadBackup: notSupported("백업 내보내기는 후속 단계에서 지원됩니다."),
-    uploadBackup: notSupported("백업 복구는 후속 단계에서 지원됩니다."),
-    chooseDirectory: async () => ({ canceled: true, dir: null }),
-    saveBackupToDir: notSupported("백업은 후속 단계에서 지원됩니다."),
+    uploadExcel: (opts) => uploadExcelImpl(opts),
+    uploadAttachment: (opts) => uploadAttachmentImpl(opts),
+    downloadAttachment: (opts) => downloadAttachmentImpl(opts),
+    downloadBackup: (opts) => downloadBackupImpl(opts),
+    uploadBackup: () => uploadBackupImpl(),
+    chooseDirectory: async () => ({ canceled: true, dir: null }), // 웹은 폴더 접근 불가 → 자동백업 폴더 기능 비활성
+    saveBackupToDir: notSupported("폴더 자동 백업은 웹에서 지원되지 않습니다. 수동 백업(내보내기)을 사용하세요."),
   };
 }
 
-// 플랜 · 스위트 · 테스트런(실행) · 레거시 런 라우트 등록 (on/ok/HttpError 초기화 이후 호출)
+// 플랜 · 스위트 · 테스트런(실행) · 레거시 런 · 첨부 라우트 등록 (on/ok/HttpError 초기화 이후 호출)
 registerRunRoutes();
+registerAttachmentRoutes();
+registerJiraRoutes();

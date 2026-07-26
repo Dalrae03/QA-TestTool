@@ -56,9 +56,20 @@ npm run dev                  # http://localhost:5173 에서 "연결 성공" 확�
   생성/결과기록은 **마이그레이션 `0004` 적용 필요**(executions 'READY' 상태·항목 상태 확장·폴더 스냅샷 컬럼)
 - ✅ **대시보드 통계**(`/api/dashboard/stats`) — TC/실행/결함 집계, 히트맵, 잔존이슈, 최근 감사로그
   (결함은 스키마에 project_id 없어 전역 집계 — 후속 스키마 패치로 보완 가능)
-- ⬜ Jira 연동(`/api/jira/*`, 결함 push/pull/link) — 후속 (현재 501)
-- ⬜ 첨부파일(→ Storage) · 엑셀 임포트 · 백업/복구 — 후속 (현재 501)
+- ✅ **첨부파일** → Supabase Storage (`src/adapter/attachments.js`, 마이그레이션 `0005` 버킷 필요)
+- ✅ **엑셀 임포트** → 브라우저 xlsx 파싱 후 폴더/케이스 생성 (`src/adapter/excel.js`, `xlsx` 의존성)
+- ✅ **Jira 설정 저장/조회** (`src/adapter/jira.js`) — 순수 DB
+- ✅ **백업/복구** → 전체 데이터 JSON 스냅샷 내보내기/복구 (`src/adapter/backup.js`, id 재매핑)
+- ⬜ **Jira 연결테스트·push·pull·sync** — 외부 Jira API 호출이라 Supabase Edge Function(서버측) 필요
+- ⬜ **엑셀/CSV 내보내기**(`/api/export/*`) — 후속 (현재 안내 메시지)
 - ⬜ 운영용 RLS 정책 (현재 `0002` 개발 전면 허용)
+
+### 스키마/인프라 적용 필요(DB 소유자)
+| 마이그레이션 | 용도 | 없으면 |
+|---|---|---|
+| `0004` | 실행 상태 확장·폴더 스냅샷 | 테스트런 생성/기록 실패 |
+| `0005` | Storage `attachments` 버킷·정책 | 첨부 업로드/다운로드 실패 |
+| `0003` (선택) | `test_folders.code` | 폴더코드 접두사 표시(현재 미사용) |
 
 ### 아키텍처 (어댑터 방식)
 ```
