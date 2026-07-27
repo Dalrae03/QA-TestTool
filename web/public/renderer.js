@@ -5787,14 +5787,15 @@ async function doExcelImport() {
   result.innerHTML = '<span style="color:var(--text-muted)">처리 중...</span>';
   try {
     const base = normalizeApiBaseUrl(state.apiBaseUrl);
-    // Electron File has .path (native filesystem path)
+    // Electron File 은 .path(네이티브 경로)를 갖는다. 웹 브라우저는 경로가 없으므로 File 객체를 직접 넘긴다.
     const filePath = _excelFile.path;
-    if (!filePath) throw new Error("파일 경로를 읽을 수 없습니다. 파일을 다시 선택해주세요.");
-    const resp = await window.desktopApi.uploadExcel({
-      url: `${base}/api/import/excel`,
-      filePath,
-      projectId: state.currentProjectId || null
-    });
+    const resp = filePath
+      ? await window.desktopApi.uploadExcel({
+          url: `${base}/api/import/excel`, filePath, projectId: state.currentProjectId || null
+        })
+      : await window.desktopApi.uploadExcel({
+          url: `${base}/api/import/excel`, file: _excelFile, projectId: state.currentProjectId || null
+        });
     if (!resp.ok) throw new Error(resp.data?.message || `HTTP ${resp.status}`);
     const data = resp.data;
     result.innerHTML = `
